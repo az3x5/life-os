@@ -128,12 +128,26 @@ export const getQuranChapter = async (
   if (!arabicResponse.ok) throw new Error(`Failed to fetch Arabic for chapter ${chapterNumber}`);
   const arabicData = await arabicResponse.json();
 
+  // Bismillah pattern to strip from verse 1 (for surahs 2-8 and 10-114)
+  // Surah 1 (Al-Fatiha) has Bismillah as verse 1, Surah 9 (At-Tawbah) has no Bismillah
+  const bismillahPattern = /^بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\s*|^بِسۡمِ ٱللَّهِ ٱلرَّحۡمَـٰنِ ٱلرَّحِیمِ\s*/;
+  const shouldStripBismillah = chapterNumber !== 1 && chapterNumber !== 9;
+
   // Combine Arabic and translation
-  const verses = (editionData.chapter || []).map((verse: any, index: number) => ({
-    verse: verse.verse || index + 1,
-    text: arabicData.chapter?.[index]?.text || '',
-    translation: verse.text || '',
-  }));
+  const verses = (editionData.chapter || []).map((verse: any, index: number) => {
+    let arabicText = arabicData.chapter?.[index]?.text || '';
+
+    // Strip Bismillah from verse 1 for applicable surahs
+    if (shouldStripBismillah && verse.verse === 1) {
+      arabicText = arabicText.replace(bismillahPattern, '').trim();
+    }
+
+    return {
+      verse: verse.verse || index + 1,
+      text: arabicText,
+      translation: verse.text || '',
+    };
+  });
 
   const result = { chapter: chapterNumber, verses };
   setCache(cacheKey, result);

@@ -641,7 +641,17 @@ const IslamicModule: React.FC = () => {
                           </button>
                        </div>
                     ) : surahVerses.length > 0 ? (
-                       surahVerses.map((verse) => (
+                       <>
+                          {/* Bismillah header for surahs 2-8 and 10-114 */}
+                          {selectedSurah.chapter !== 1 && selectedSurah.chapter !== 9 && (
+                             <div className="text-center py-8 bg-white rounded-3xl border border-slate-100 shadow-sm">
+                                <p className="font-amiri text-3xl text-slate-800 leading-relaxed" dir="rtl">
+                                   بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ
+                                </p>
+                                <p className="text-slate-500 text-sm mt-2">In the name of Allah, the Most Gracious, the Most Merciful</p>
+                             </div>
+                          )}
+                          {surahVerses.map((verse) => (
                           <div key={verse.verse} className="bg-white rounded-3xl p-6 md:p-8 shadow-sm border border-slate-100 relative group transition-all hover:shadow-md">
 
                              {/* Verse Header / Actions */}
@@ -698,7 +708,8 @@ const IslamicModule: React.FC = () => {
                                 )}
                              </div>
                           </div>
-                       ))
+                       ))}
+                       </>
                     ) : (
                        <div className="flex flex-col items-center justify-center py-20 text-center">
                           <BookOpen size={48} className="text-slate-200 mb-4" />
