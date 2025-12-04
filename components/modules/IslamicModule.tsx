@@ -33,13 +33,13 @@ import {
   RefreshCw
 } from 'lucide-react';
 import {
-  MOCK_PRAYER_TIMES,
   MOCK_FIQH,
   MOCK_RECITERS
 } from '../../constants';
 import { format } from 'date-fns';
 import { FiqhTopic } from '../../types';
 import * as islamicService from '../../services/islamicService';
+import * as prayerTimesData from '../../services/prayerTimesData';
 
 type Tab = 'prayers' | 'quran' | 'dua' | 'hadith' | 'fiqh';
 
@@ -119,6 +119,12 @@ const IslamicModule: React.FC = () => {
   // Audio State
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
 
+  // Prayer Times State
+  const [prayerTimes, setPrayerTimes] = useState<prayerTimesData.PrayerTime | null>(null);
+  const [atolls, setAtolls] = useState<prayerTimesData.Atoll[]>([]);
+  const [islands, setIslands] = useState<prayerTimesData.Island[]>([]);
+  const [selectedAtoll, setSelectedAtoll] = useState<string>('S'); // Default to Addu
+
   // Load initial data
   useEffect(() => {
     loadInitialData();
@@ -137,10 +143,27 @@ const IslamicModule: React.FC = () => {
       // Load Duas (local data)
       setDuas(islamicService.getAllDuas());
       setDuaCategories(islamicService.getDuaCategories());
+
+      // Load prayer times and location data
+      const atollsData = await prayerTimesData.getAllAtolls();
+      setAtolls(atollsData);
+      const islandsData = await prayerTimesData.getAllIslands();
+      setIslands(islandsData);
+      const todayPrayers = await prayerTimesData.getTodaysPrayerTimes(selectedAtoll);
+      setPrayerTimes(todayPrayers);
     } catch (err) {
       console.error('Failed to load initial data:', err);
     }
   };
+
+  // Reload prayer times when atoll changes
+  useEffect(() => {
+    const loadPrayerTimes = async () => {
+      const todayPrayers = await prayerTimesData.getTodaysPrayerTimes(selectedAtoll);
+      setPrayerTimes(todayPrayers);
+    };
+    loadPrayerTimes();
+  }, [selectedAtoll]);
 
   // Load surah verses when a surah is selected
   useEffect(() => {
@@ -248,15 +271,41 @@ const IslamicModule: React.FC = () => {
   // --- Views ---
 
   const renderPrayersView = () => {
-    const hijriDate = "14 Ramadan 1445"; 
+    const hijriDate = "14 Ramadan 1445";
+
+    // Build prayer times array from local data
+    const prayerTimesList = prayerTimes ? [
+      { name: 'Fajr', time: prayerTimes.fajr },
+      { name: 'Sunrise', time: prayerTimes.sunrise },
+      { name: 'Dhuhr', time: prayerTimes.duhr },
+      { name: 'Asr', time: prayerTimes.asr },
+      { name: 'Maghrib', time: prayerTimes.maghrib },
+      { name: 'Isha', time: prayerTimes.isha },
+    ] : [];
+
+    // Find the next prayer
+    const getNextPrayer = () => {
+      if (!prayerTimes) return 'Fajr';
+      const now = new Date();
+      const currentTime = now.getHours() * 60 + now.getMinutes();
+
+      for (const prayer of prayerTimesList) {
+        const [hours, mins] = prayer.time.split(':').map(Number);
+        const prayerMinutes = hours * 60 + mins;
+        if (prayerMinutes > currentTime) return prayer.name;
+      }
+      return 'Fajr'; // Next day
+    };
+    const nextPrayer = getNextPrayer();
+
+    // Get selected atoll name
+    const selectedAtollInfo = atolls.find(a => a.code_letter === selectedAtoll);
+    const locationName = selectedAtollInfo?.name_abbr_en || selectedAtoll;
 
     // Helper to determine styling based on prayer type
     const getPrayerStyle = (name: string, isNext: boolean) => {
       if (name === 'Sunrise') {
          return 'bg-amber-100/10 border-amber-500/30 text-amber-200';
-      }
-      if (name === 'Tahajjud' || name === 'Duha') {
-         return 'bg-emerald-900/30 border-emerald-500/30 text-emerald-200 border-dashed';
       }
       if (isNext) {
          return 'bg-white text-emerald-900 border-white shadow-lg';
@@ -271,15 +320,25 @@ const IslamicModule: React.FC = () => {
            {/* Main Prayer Card */}
            <div className="lg:col-span-2 bg-gradient-to-br from-emerald-600 to-teal-800 rounded-3xl p-6 md:p-10 text-white shadow-xl relative overflow-hidden flex flex-col justify-between min-h-[auto] md:min-h-[280px]">
               <div className="absolute top-0 right-0 w-80 h-80 bg-white/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none" />
-              
+
               <div className="relative z-10 flex justify-between items-start">
                  <div>
                     <div className="flex items-center gap-2 mb-3 text-emerald-100 bg-white/10 w-fit px-3 py-1 rounded-full backdrop-blur-md border border-white/10">
                        <MapPin size={14} />
-                       <span className="text-xs font-semibold tracking-wide">New York, USA</span>
+                       <select
+                         value={selectedAtoll}
+                         onChange={(e) => setSelectedAtoll(e.target.value)}
+                         className="bg-transparent border-none text-xs font-semibold tracking-wide cursor-pointer focus:outline-none"
+                       >
+                         {atolls.map(atoll => (
+                           <option key={atoll.code_letter} value={atoll.code_letter} className="text-slate-900">
+                             {atoll.name_abbr_en} - {atoll.name_official_en}
+                           </option>
+                         ))}
+                       </select>
                     </div>
-                    <h2 className="text-3xl md:text-5xl font-bold mb-2 tracking-tight">Dhuhr</h2>
-                    <p className="text-emerald-100 text-base md:text-xl font-medium">Next prayer in 2h 14m</p>
+                    <h2 className="text-3xl md:text-5xl font-bold mb-2 tracking-tight">{nextPrayer}</h2>
+                    <p className="text-emerald-100 text-base md:text-xl font-medium">Next prayer</p>
                  </div>
                  <div className="text-right hidden sm:block">
                     <div className="text-2xl md:text-3xl font-bold">{format(new Date(), 'EEEE, MMM d')}</div>
@@ -287,10 +346,10 @@ const IslamicModule: React.FC = () => {
                  </div>
               </div>
 
-              {/* Prayer Times Grid - Optimized for Mobile (4 columns on mobile = 2 rows) */}
-              <div className="relative z-10 grid grid-cols-4 lg:grid-cols-8 gap-2 sm:gap-3 mt-8">
-                 {MOCK_PRAYER_TIMES.map((prayer) => {
-                    const isNext = prayer.name === 'Dhuhr'; // Static for mock
+              {/* Prayer Times Grid */}
+              <div className="relative z-10 grid grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 mt-8">
+                 {prayerTimesList.map((prayer) => {
+                    const isNext = prayer.name === nextPrayer;
                     return (
                        <div key={prayer.name} className={`p-2 sm:p-3 rounded-xl border transition-all flex flex-col items-center justify-center text-center ${getPrayerStyle(prayer.name, isNext)}`}>
                           <div className={`text-[9px] sm:text-[10px] uppercase tracking-wider mb-1 font-bold truncate w-full ${isNext ? 'text-emerald-600' : 'text-emerald-200/70'}`}>
@@ -329,11 +388,11 @@ const IslamicModule: React.FC = () => {
                </button>
             </div>
             <div className="overflow-x-auto">
-               <table className="w-full text-left min-w-[800px]">
+               <table className="w-full text-left min-w-[700px]">
                   <thead className="bg-slate-50 text-slate-500 text-xs uppercase font-bold tracking-wider">
                      <tr>
                         <th className="p-5 pl-8 sticky left-0 bg-slate-50 z-10 border-r border-slate-100">Date</th>
-                        {MOCK_PRAYER_TIMES.map(p => (
+                        {prayerTimesList.map(p => (
                            <th key={p.name} className={`p-5 ${p.name === 'Isha' ? 'pr-8' : ''} ${p.name === 'Sunrise' ? 'text-amber-500' : ''}`}>
                               {p.name}
                            </th>
@@ -346,7 +405,7 @@ const IslamicModule: React.FC = () => {
                            <td className="p-5 pl-8 text-sm font-semibold text-slate-900 sticky left-0 bg-white group-hover:bg-slate-50 border-r border-slate-50">
                               {format(new Date(new Date().setDate(new Date().getDate() + day)), 'dd MMM')}
                            </td>
-                           {MOCK_PRAYER_TIMES.map(p => (
+                           {prayerTimesList.map(p => (
                               <td key={p.name} className={`p-5 text-sm font-medium ${p.name === 'Sunrise' ? 'text-amber-600/70' : 'text-slate-600'}`}>
                                  {p.time}
                               </td>
