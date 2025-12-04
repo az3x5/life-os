@@ -104,7 +104,7 @@ export const getQuranEditions = async (): Promise<Record<string, QuranEdition>> 
 // Get a specific Quran chapter with Arabic and translation
 export const getQuranChapter = async (
   chapterNumber: number,
-  edition: string = 'eng-sahihinternational'
+  edition: string = 'eng-ummmuhammad'
 ): Promise<{ chapter: number; verses: QuranVerse[] }> => {
   const cacheKey = `quran_chapter_${chapterNumber}_${edition}`;
   const cached = getCached<{ chapter: number; verses: QuranVerse[] }>(cacheKey);
@@ -116,7 +116,7 @@ export const getQuranChapter = async (
   const editionData = await response.json();
 
   // Fetch Arabic text
-  const arabicResponse = await fetch(`${QURAN_API_BASE}/editions/ara-quranuthmanit/${chapterNumber}.json`);
+  const arabicResponse = await fetch(`${QURAN_API_BASE}/editions/ara-quransimple/${chapterNumber}.json`);
   if (!arabicResponse.ok) throw new Error(`Failed to fetch Arabic for chapter ${chapterNumber}`);
   const arabicData = await arabicResponse.json();
 
@@ -136,7 +136,7 @@ export const getQuranChapter = async (
 export const getQuranVerse = async (
   chapterNumber: number,
   verseNumber: number,
-  edition: string = 'eng-sahihinternational'
+  edition: string = 'eng-ummmuhammad'
 ): Promise<QuranVerse> => {
   const response = await fetch(`${QURAN_API_BASE}/editions/${edition}/${chapterNumber}/${verseNumber}.json`);
   if (!response.ok) throw new Error(`Failed to fetch verse ${chapterNumber}:${verseNumber}`);
