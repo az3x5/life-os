@@ -15,7 +15,7 @@ export interface PrayerTime {
 
 export interface Island {
   island_id: string;
-  reg_no: string;
+  reg_no: string;  // This is the key! Maps to island_reg in prayer_times (e.g., "A01", "K03")
   name_dv: string;
   name_en: string;
   island_type: string;

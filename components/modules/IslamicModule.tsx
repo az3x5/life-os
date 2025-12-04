@@ -157,9 +157,8 @@ const IslamicModule: React.FC = () => {
       setFilteredIslands(defaultAtollIslands);
       if (defaultAtollIslands.length > 0) {
         setSelectedIsland(defaultAtollIslands[0]);
-        // Build island_reg: atoll_code + prayer_table_id (e.g., "S01" or just "S" for some)
-        const islandReg = `${defaultAtollIslands[0].atoll_code}${defaultAtollIslands[0].prayer_table_id.padStart(2, '0')}`;
-        const todayPrayers = await prayerTimesData.getTodaysPrayerTimes(islandReg);
+        // Use reg_no directly as island_reg (e.g., "A01", "K03", "S01")
+        const todayPrayers = await prayerTimesData.getTodaysPrayerTimes(defaultAtollIslands[0].reg_no);
         setPrayerTimes(todayPrayers);
       }
     } catch (err) {
@@ -188,16 +187,8 @@ const IslamicModule: React.FC = () => {
   useEffect(() => {
     const loadPrayerTimes = async () => {
       if (selectedIsland) {
-        // Build island_reg: atoll_code + prayer_table_id (padded to 2 digits)
-        const prayerTableId = selectedIsland.prayer_table_id;
-        const islandReg = `${selectedIsland.atoll_code}${prayerTableId.padStart(2, '0')}`;
-        let todayPrayers = await prayerTimesData.getTodaysPrayerTimes(islandReg);
-
-        // If not found with padded format, try just the atoll code (for atolls like "S", "Q")
-        if (!todayPrayers) {
-          todayPrayers = await prayerTimesData.getTodaysPrayerTimes(selectedIsland.atoll_code);
-        }
-
+        // Use reg_no directly as island_reg (e.g., "A01", "K03", "S01")
+        const todayPrayers = await prayerTimesData.getTodaysPrayerTimes(selectedIsland.reg_no);
         setPrayerTimes(todayPrayers);
       }
     };
