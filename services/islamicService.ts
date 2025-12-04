@@ -83,7 +83,15 @@ export const getQuranChapters = async (): Promise<QuranChapter[]> => {
   if (!response.ok) throw new Error('Failed to fetch Quran chapters');
 
   const data = await response.json();
-  const chapters = data.chapters || Object.values(data);
+  // Transform the API data - verses is an array, we need the count
+  const chapters = (data.chapters || []).map((ch: any) => ({
+    chapter: ch.chapter,
+    name: ch.name,
+    englishname: ch.englishname,
+    arabicname: ch.arabicname,
+    revelation: ch.revelation,
+    verses: Array.isArray(ch.verses) ? ch.verses.length : ch.verses,
+  }));
   setCache(CACHE_KEYS.QURAN_CHAPTERS, chapters);
   return chapters;
 };
