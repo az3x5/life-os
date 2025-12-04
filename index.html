@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#ffffff" />
+    <title>LifeOS Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              // Map standard colors to dynamic variables
+              slate: {
+                50: 'var(--color-bg-app)',      // App Background
+                100: 'var(--color-bg-subtle)',  // Hover states / Sidebar active
+                200: 'var(--color-border)',     // Borders
+                300: '#cbd5e1',                 // Scrollbar thumb
+                400: '#94a3b8',                 // Scrollbar hover
+                500: 'var(--color-text-muted)', // Muted text
+                600: 'var(--color-text-main)',  // Slightly lighter main text
+                700: 'var(--color-text-main)',  // Main text
+                800: 'var(--color-text-main)',  // Darker text
+                900: 'var(--color-text-strong)', // Strongest text / Buttons
+              },
+              white: 'var(--color-surface)',    // Card Backgrounds
+            },
+            borderRadius: {
+              'xl': 'calc(var(--radius) * 0.75)',
+              '2xl': 'var(--radius)',
+              '3xl': 'calc(var(--radius) * 1.5)',
+            }
+          }
+        }
+      }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        /* Default Light Theme Variables */
+        --color-bg-app: #f8fafc;
+        --color-bg-subtle: #f1f5f9;
+        --color-surface: #ffffff;
+        --color-border: #e2e8f0;
+        --color-text-muted: #64748b;
+        --color-text-main: #334155;
+        --color-text-strong: #0f172a;
+        --radius: 1rem; /* 16px */
+      }
+
+      body {
+        font-family: 'Inter', sans-serif;
+        background-color: var(--color-bg-app);
+        color: var(--color-text-strong);
+        transition: background-color 0.3s ease, color 0.3s ease;
+        overscroll-behavior-y: none; /* Prevent pull-to-refresh on mobile */
+        -webkit-tap-highlight-color: transparent; /* Remove gray tap highlight on iOS */
+      }
+      
+      /* Mobile inputs optimization to prevent zoom */
+      input, select, textarea {
+        font-size: 16px; 
+      }
+      
+      /* Desktop-only custom scrollbar */
+      @media (hover: hover) and (pointer: fine) {
+        ::-webkit-scrollbar {
+          width: 6px;
+          height: 6px;
+        }
+        
+        ::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+          background-color: #cbd5e1; /* Slate 300 */
+          border-radius: 9999px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+          background-color: #94a3b8; /* Slate 400 */
+        }
+
+        /* Firefox */
+        * {
+          scrollbar-width: thin;
+          scrollbar-color: #cbd5e1 transparent;
+        }
+      }
+
+      .font-amiri {
+        font-family: 'Amiri', serif;
+      }
+
+      /* Utility for hiding scrollbar but keeping functionality */
+      .scrollbar-hide::-webkit-scrollbar {
+        display: none;
+      }
+      .scrollbar-hide {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+      
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      
+      .animate-fade-in {
+        animation: fadeIn 0.4s ease-out forwards;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.1/",
+    "react": "https://aistudiocdn.com/react@^19.2.1",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.31.0",
+    "date-fns": "https://aistudiocdn.com/date-fns@^4.1.0",
+    "date-fns/": "https://aistudiocdn.com/date-fns@^4.1.0/",
+    "@prisma/client": "https://aistudiocdn.com/@prisma/client@^7.1.0",
+    "cors": "https://aistudiocdn.com/cors@^2.8.5",
+    "express": "https://aistudiocdn.com/express@^5.2.1",
+    "axios": "https://aistudiocdn.com/axios@^1.13.2"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>
