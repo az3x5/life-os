@@ -123,8 +123,8 @@ export const getQuranChapter = async (
   if (!response.ok) throw new Error(`Failed to fetch Quran chapter ${chapterNumber}`);
   const editionData = await response.json();
 
-  // Fetch Arabic text
-  const arabicResponse = await fetch(`${QURAN_API_BASE}/editions/ara-quransimple/${chapterNumber}.json`);
+  // Fetch Arabic text - using ara-quranacademy which has proper verse separation
+  const arabicResponse = await fetch(`${QURAN_API_BASE}/editions/ara-quranacademy/${chapterNumber}.json`);
   if (!arabicResponse.ok) throw new Error(`Failed to fetch Arabic for chapter ${chapterNumber}`);
   const arabicData = await arabicResponse.json();
 
