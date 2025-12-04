@@ -303,10 +303,46 @@ const IslamicModule: React.FC = () => {
   const renderPrayersView = () => {
     const hijriDate = "14 Ramadan 1445";
 
+    // Helper to add minutes to a time string (HH:MM)
+    const addMinutesToTime = (timeStr: string, minutes: number): string => {
+      const [h, m] = timeStr.split(':').map(Number);
+      const totalMins = h * 60 + m + minutes;
+      const newH = Math.floor(totalMins / 60) % 24;
+      const newM = totalMins % 60;
+      return `${newH.toString().padStart(2, '0')}:${newM.toString().padStart(2, '0')}`;
+    };
+
+    // Calculate Duha time (~20 minutes after Sunrise)
+    const getDuhaTime = () => {
+      if (!prayerTimes) return '07:00';
+      return addMinutesToTime(prayerTimes.sunrise, 20);
+    };
+
+    // Calculate Tahajjud time (last third of night - roughly 2/3 between Isha and Fajr next day)
+    const getTahajjudTime = () => {
+      if (!prayerTimes) return '03:00';
+      const [ishaH, ishaM] = prayerTimes.isha.split(':').map(Number);
+      const [fajrH, fajrM] = prayerTimes.fajr.split(':').map(Number);
+
+      // Calculate night duration (Isha to Fajr next day)
+      let ishaMinutes = ishaH * 60 + ishaM;
+      let fajrMinutes = fajrH * 60 + fajrM;
+      if (fajrMinutes < ishaMinutes) fajrMinutes += 24 * 60; // Fajr is next day
+
+      const nightDuration = fajrMinutes - ishaMinutes;
+      const tahajjudStart = ishaMinutes + Math.floor(nightDuration * 2 / 3);
+
+      const tahajjudH = Math.floor(tahajjudStart / 60) % 24;
+      const tahajjudM = tahajjudStart % 60;
+      return `${tahajjudH.toString().padStart(2, '0')}:${tahajjudM.toString().padStart(2, '0')}`;
+    };
+
     // Build prayer times array from local data
     const prayerTimesList = prayerTimes ? [
+      { name: 'Tahajjud', time: getTahajjudTime(), isOptional: true },
       { name: 'Fajr', time: prayerTimes.fajr },
       { name: 'Sunrise', time: prayerTimes.sunrise },
+      { name: 'Duha', time: getDuhaTime(), isOptional: true },
       { name: 'Dhuhr', time: prayerTimes.duhr },
       { name: 'Asr', time: prayerTimes.asr },
       { name: 'Maghrib', time: prayerTimes.maghrib },
@@ -333,9 +369,12 @@ const IslamicModule: React.FC = () => {
     const locationName = selectedAtollInfo?.name_abbr_en || selectedAtoll;
 
     // Helper to determine styling based on prayer type
-    const getPrayerStyle = (name: string, isNext: boolean) => {
+    const getPrayerStyle = (name: string, isNext: boolean, isOptional?: boolean) => {
       if (name === 'Sunrise') {
          return 'bg-amber-100/10 border-amber-500/30 text-amber-200';
+      }
+      if (isOptional) {
+         return 'bg-indigo-500/10 border-indigo-500/30 text-indigo-200';
       }
       if (isNext) {
          return 'bg-white text-emerald-900 border-white shadow-lg';
@@ -397,19 +436,21 @@ const IslamicModule: React.FC = () => {
               </div>
 
               {/* Prayer Times Grid */}
-              <div className="relative z-10 grid grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 mt-8">
+              <div className="relative z-10 grid grid-cols-4 lg:grid-cols-8 gap-2 sm:gap-3 mt-8">
                  {prayerTimesList.map((prayer) => {
-                    const isNext = prayer.name === nextPrayer;
+                    const isNext = prayer.name === nextPrayer && !prayer.isOptional;
+                    const isOptional = prayer.isOptional;
                     return (
-                       <div key={prayer.name} className={`p-2 sm:p-3 rounded-xl border transition-all flex flex-col items-center justify-center text-center ${getPrayerStyle(prayer.name, isNext)}`}>
-                          <div className={`text-[9px] sm:text-[10px] uppercase tracking-wider mb-1 font-bold truncate w-full ${isNext ? 'text-emerald-600' : 'text-emerald-200/70'}`}>
-                             {prayer.name}
+                       <div key={prayer.name} className={`p-2 sm:p-3 rounded-xl border transition-all flex flex-col items-center justify-center text-center ${getPrayerStyle(prayer.name, isNext, isOptional)}`}>
+                          <div className={`text-[9px] sm:text-[10px] uppercase tracking-wider mb-1 font-bold truncate w-full ${isNext ? 'text-emerald-600' : isOptional ? 'text-indigo-300/70' : 'text-emerald-200/70'}`}>
+                             {prayer.name}{isOptional ? '*' : ''}
                           </div>
                           <div className="text-base sm:text-lg font-bold">{prayer.time}</div>
                        </div>
                     );
                  })}
               </div>
+              <p className="relative z-10 text-xs text-emerald-200/50 mt-2">* Optional (Sunnah) prayers</p>
            </div>
 
            {/* Qibla Compass Card */}
@@ -443,8 +484,8 @@ const IslamicModule: React.FC = () => {
                      <tr>
                         <th className="p-5 pl-8 sticky left-0 bg-slate-50 z-10 border-r border-slate-100">Date</th>
                         {prayerTimesList.map(p => (
-                           <th key={p.name} className={`p-5 ${p.name === 'Isha' ? 'pr-8' : ''} ${p.name === 'Sunrise' ? 'text-amber-500' : ''}`}>
-                              {p.name}
+                           <th key={p.name} className={`p-5 ${p.name === 'Isha' ? 'pr-8' : ''} ${p.name === 'Sunrise' ? 'text-amber-500' : ''} ${p.isOptional ? 'text-indigo-500' : ''}`}>
+                              {p.name}{p.isOptional ? '*' : ''}
                            </th>
                         ))}
                      </tr>
@@ -456,7 +497,7 @@ const IslamicModule: React.FC = () => {
                               {format(new Date(new Date().setDate(new Date().getDate() + day)), 'dd MMM')}
                            </td>
                            {prayerTimesList.map(p => (
-                              <td key={p.name} className={`p-5 text-sm font-medium ${p.name === 'Sunrise' ? 'text-amber-600/70' : 'text-slate-600'}`}>
+                              <td key={p.name} className={`p-5 text-sm font-medium ${p.name === 'Sunrise' ? 'text-amber-600/70' : p.isOptional ? 'text-indigo-500/70' : 'text-slate-600'}`}>
                                  {p.time}
                               </td>
                            ))}
