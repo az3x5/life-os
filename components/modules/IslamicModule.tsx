@@ -566,13 +566,6 @@ const IslamicModule: React.FC = () => {
               
               <div className="flex-1 overflow-y-auto bg-slate-50/30">
                  <div className="max-w-4xl mx-auto p-6 md:p-10 space-y-10">
-                    {/* Bismillah */}
-                    {selectedSurah.chapter !== 1 && selectedSurah.chapter !== 9 && (
-                       <div className="text-center py-8">
-                          <p className="font-amiri text-3xl text-slate-800 leading-relaxed">بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ</p>
-                       </div>
-                    )}
-
                     {loading ? (
                        <div className="flex flex-col items-center justify-center py-20">
                           <Loader2 className="animate-spin text-emerald-600 mb-4" size={48} />
