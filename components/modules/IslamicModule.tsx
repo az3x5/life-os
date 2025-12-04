@@ -642,8 +642,8 @@ const IslamicModule: React.FC = () => {
                        </div>
                     ) : surahVerses.length > 0 ? (
                        <>
-                          {/* Bismillah header for surahs 2-8 and 10-114 */}
-                          {selectedSurah.chapter !== 1 && selectedSurah.chapter !== 9 && (
+                          {/* Bismillah header for all surahs except Surah 9 (At-Tawbah) */}
+                          {selectedSurah.chapter !== 9 && (
                              <div className="text-center py-8 bg-white rounded-3xl border border-slate-100 shadow-sm">
                                 <p className="font-amiri text-3xl text-slate-800 leading-relaxed" dir="rtl">
                                    بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ
