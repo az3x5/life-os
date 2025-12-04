@@ -122,8 +122,10 @@ const IslamicModule: React.FC = () => {
   // Prayer Times State
   const [prayerTimes, setPrayerTimes] = useState<prayerTimesData.PrayerTime | null>(null);
   const [atolls, setAtolls] = useState<prayerTimesData.Atoll[]>([]);
-  const [islands, setIslands] = useState<prayerTimesData.Island[]>([]);
+  const [allIslands, setAllIslands] = useState<prayerTimesData.Island[]>([]);
+  const [filteredIslands, setFilteredIslands] = useState<prayerTimesData.Island[]>([]);
   const [selectedAtoll, setSelectedAtoll] = useState<string>('S'); // Default to Addu
+  const [selectedIsland, setSelectedIsland] = useState<prayerTimesData.Island | null>(null);
 
   // Load initial data
   useEffect(() => {
@@ -148,22 +150,59 @@ const IslamicModule: React.FC = () => {
       const atollsData = await prayerTimesData.getAllAtolls();
       setAtolls(atollsData);
       const islandsData = await prayerTimesData.getAllIslands();
-      setIslands(islandsData);
-      const todayPrayers = await prayerTimesData.getTodaysPrayerTimes(selectedAtoll);
-      setPrayerTimes(todayPrayers);
+      setAllIslands(islandsData);
+
+      // Filter islands by default atoll and select first one
+      const defaultAtollIslands = islandsData.filter(i => i.atoll_code === selectedAtoll);
+      setFilteredIslands(defaultAtollIslands);
+      if (defaultAtollIslands.length > 0) {
+        setSelectedIsland(defaultAtollIslands[0]);
+        // Build island_reg: atoll_code + prayer_table_id (e.g., "S01" or just "S" for some)
+        const islandReg = `${defaultAtollIslands[0].atoll_code}${defaultAtollIslands[0].prayer_table_id.padStart(2, '0')}`;
+        const todayPrayers = await prayerTimesData.getTodaysPrayerTimes(islandReg);
+        setPrayerTimes(todayPrayers);
+      }
     } catch (err) {
       console.error('Failed to load initial data:', err);
     }
   };
 
-  // Reload prayer times when atoll changes
+  // Reload islands and prayer times when atoll changes
+  useEffect(() => {
+    const updateForAtoll = async () => {
+      const atollIslands = allIslands.filter(i => i.atoll_code === selectedAtoll);
+      setFilteredIslands(atollIslands);
+      if (atollIslands.length > 0) {
+        setSelectedIsland(atollIslands[0]);
+      } else {
+        setSelectedIsland(null);
+        setPrayerTimes(null);
+      }
+    };
+    if (allIslands.length > 0) {
+      updateForAtoll();
+    }
+  }, [selectedAtoll, allIslands]);
+
+  // Reload prayer times when island changes
   useEffect(() => {
     const loadPrayerTimes = async () => {
-      const todayPrayers = await prayerTimesData.getTodaysPrayerTimes(selectedAtoll);
-      setPrayerTimes(todayPrayers);
+      if (selectedIsland) {
+        // Build island_reg: atoll_code + prayer_table_id (padded to 2 digits)
+        const prayerTableId = selectedIsland.prayer_table_id;
+        const islandReg = `${selectedIsland.atoll_code}${prayerTableId.padStart(2, '0')}`;
+        let todayPrayers = await prayerTimesData.getTodaysPrayerTimes(islandReg);
+
+        // If not found with padded format, try just the atoll code (for atolls like "S", "Q")
+        if (!todayPrayers) {
+          todayPrayers = await prayerTimesData.getTodaysPrayerTimes(selectedIsland.atoll_code);
+        }
+
+        setPrayerTimes(todayPrayers);
+      }
     };
     loadPrayerTimes();
-  }, [selectedAtoll]);
+  }, [selectedIsland]);
 
   // Load surah verses when a surah is selected
   useEffect(() => {
@@ -323,19 +362,39 @@ const IslamicModule: React.FC = () => {
 
               <div className="relative z-10 flex justify-between items-start">
                  <div>
-                    <div className="flex items-center gap-2 mb-3 text-emerald-100 bg-white/10 w-fit px-3 py-1 rounded-full backdrop-blur-md border border-white/10">
-                       <MapPin size={14} />
-                       <select
-                         value={selectedAtoll}
-                         onChange={(e) => setSelectedAtoll(e.target.value)}
-                         className="bg-transparent border-none text-xs font-semibold tracking-wide cursor-pointer focus:outline-none"
-                       >
-                         {atolls.map(atoll => (
-                           <option key={atoll.code_letter} value={atoll.code_letter} className="text-slate-900">
-                             {atoll.name_abbr_en} - {atoll.name_official_en}
-                           </option>
-                         ))}
-                       </select>
+                    <div className="flex flex-wrap items-center gap-2 mb-3">
+                       <div className="flex items-center gap-2 text-emerald-100 bg-white/10 w-fit px-3 py-1 rounded-full backdrop-blur-md border border-white/10">
+                          <MapPin size={14} />
+                          <select
+                            value={selectedAtoll}
+                            onChange={(e) => setSelectedAtoll(e.target.value)}
+                            className="bg-transparent border-none text-xs font-semibold tracking-wide cursor-pointer focus:outline-none"
+                          >
+                            {atolls.map(atoll => (
+                              <option key={atoll.code_letter} value={atoll.code_letter} className="text-slate-900">
+                                {atoll.name_abbr_en}
+                              </option>
+                            ))}
+                          </select>
+                       </div>
+                       {filteredIslands.length > 0 && (
+                         <div className="flex items-center gap-2 text-emerald-100 bg-white/10 w-fit px-3 py-1 rounded-full backdrop-blur-md border border-white/10">
+                            <select
+                              value={selectedIsland?.island_id || ''}
+                              onChange={(e) => {
+                                const island = filteredIslands.find(i => i.island_id === e.target.value);
+                                if (island) setSelectedIsland(island);
+                              }}
+                              className="bg-transparent border-none text-xs font-semibold tracking-wide cursor-pointer focus:outline-none"
+                            >
+                              {filteredIslands.map(island => (
+                                <option key={island.island_id} value={island.island_id} className="text-slate-900">
+                                  {island.name_en}
+                                </option>
+                              ))}
+                            </select>
+                         </div>
+                       )}
                     </div>
                     <h2 className="text-3xl md:text-5xl font-bold mb-2 tracking-tight">{nextPrayer}</h2>
                     <p className="text-emerald-100 text-base md:text-xl font-medium">Next prayer</p>
