@@ -59,10 +59,15 @@ interface QuranVerseData {
   translation?: string;
 }
 
-interface HadithEditionInfo {
+interface HadithBook {
   name: string;
-  collection: string[];
-  language: string;
+  collection: {
+    name: string;
+    book: string;
+    author: string;
+    language: string;
+    has_sections: boolean;
+  }[];
 }
 
 const IslamicModule: React.FC = () => {
@@ -100,7 +105,8 @@ const IslamicModule: React.FC = () => {
   const [tafsirLoading, setTafsirLoading] = useState(false);
 
   // Hadith State
-  const [hadithEditions, setHadithEditions] = useState<Record<string, HadithEditionInfo>>({});
+  const [hadithBooks, setHadithBooks] = useState<Record<string, HadithBook>>({});
+  const [selectedHadithBook, setSelectedHadithBook] = useState<string | null>(null);
   const [selectedHadithEdition, setSelectedHadithEdition] = useState<string | null>(null);
   const [hadithSections, setHadithSections] = useState<islamicService.HadithSection[]>([]);
   const [selectedSection, setSelectedSection] = useState<number | null>(null);
@@ -124,9 +130,9 @@ const IslamicModule: React.FC = () => {
       const chapters = await islamicService.getQuranChapters();
       setQuranChapters(chapters);
 
-      // Load Hadith editions
-      const editions = await islamicService.getHadithEditions();
-      setHadithEditions(editions);
+      // Load Hadith books
+      const books = await islamicService.getHadithEditions();
+      setHadithBooks(books);
 
       // Load Duas (local data)
       setDuas(islamicService.getAllDuas());
@@ -705,35 +711,43 @@ const IslamicModule: React.FC = () => {
   };
 
   const renderHadithView = () => {
-    const editionKeys = Object.keys(hadithEditions);
+    const bookKeys = Object.keys(hadithBooks);
 
-    // If no edition selected, show edition list
-    if (!selectedHadithEdition) {
+    // If no book selected, show book list
+    if (!selectedHadithBook) {
       return (
         <div className="animate-fade-in space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {editionKeys.length === 0 ? (
-              <div className="col-span-2 flex flex-col items-center justify-center py-20">
+          <h2 className="text-xl font-bold text-slate-900">Hadith Collections</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {bookKeys.length === 0 ? (
+              <div className="col-span-3 flex flex-col items-center justify-center py-20">
                 <Loader2 className="animate-spin text-emerald-600 mb-4" size={48} />
                 <p className="text-slate-500">Loading Hadith collections...</p>
               </div>
             ) : (
-              editionKeys.map(key => {
-                const edition = hadithEditions[key];
+              bookKeys.map(key => {
+                const book = hadithBooks[key];
+                // Find English edition for this book
+                const englishEdition = book.collection.find(e => e.language === 'English');
                 return (
                   <button
                     key={key}
-                    onClick={() => setSelectedHadithEdition(key)}
+                    onClick={() => {
+                      setSelectedHadithBook(key);
+                      if (englishEdition) {
+                        setSelectedHadithEdition(englishEdition.name);
+                      }
+                    }}
                     className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer group text-left"
                   >
                     <div className="flex justify-between items-start mb-4">
                       <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl group-hover:bg-emerald-600 group-hover:text-white transition-colors">
                         <Book size={24} />
                       </div>
-                      <span className="text-xs font-bold bg-slate-100 text-slate-500 px-2 py-1 rounded-md">{edition.collection?.length || 0} Sections</span>
+                      <span className="text-xs font-bold bg-slate-100 text-slate-500 px-2 py-1 rounded-md">{book.collection.length} Languages</span>
                     </div>
-                    <h3 className="text-lg font-bold text-slate-900 mb-1 capitalize">{edition.name?.replace(/-/g, ' ') || key}</h3>
-                    <p className="text-sm text-slate-500">{edition.language || 'Arabic'}</p>
+                    <h3 className="text-lg font-bold text-slate-900 mb-1">{book.name}</h3>
+                    <p className="text-sm text-slate-500">{englishEdition?.author || 'Various Authors'}</p>
                   </button>
                 );
               })
@@ -743,23 +757,29 @@ const IslamicModule: React.FC = () => {
       );
     }
 
-    // If edition selected but no section, show sections
+    // If book selected but no section, show sections
     if (selectedSection === null) {
+      const bookName = hadithBooks[selectedHadithBook]?.name || selectedHadithBook;
       return (
         <div className="animate-fade-in space-y-6">
           <button
-            onClick={() => { setSelectedHadithEdition(null); setHadithSections([]); }}
+            onClick={() => { setSelectedHadithBook(null); setSelectedHadithEdition(null); setHadithSections([]); }}
             className="flex items-center gap-2 text-emerald-600 hover:text-emerald-700 font-medium"
           >
             <ArrowLeft size={18} /> Back to Collections
           </button>
 
-          <h2 className="text-xl font-bold text-slate-900 capitalize">{selectedHadithEdition.replace(/-/g, ' ')}</h2>
+          <h2 className="text-xl font-bold text-slate-900">{bookName}</h2>
 
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20">
               <Loader2 className="animate-spin text-emerald-600 mb-4" size={48} />
               <p className="text-slate-500">Loading sections...</p>
+            </div>
+          ) : hadithSections.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20">
+              <Book size={48} className="text-slate-300 mb-4" />
+              <p className="text-slate-500">No sections found</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -770,11 +790,11 @@ const IslamicModule: React.FC = () => {
                   className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all text-left"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                    <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-sm">
                       {section.hapilesection}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-slate-900 truncate">{section.name || `Section ${section.hapilesection}`}</h3>
+                      <h3 className="font-medium text-slate-900 text-sm">{section.name || `Section ${section.hapilesection}`}</h3>
                     </div>
                   </div>
                 </button>
@@ -786,6 +806,7 @@ const IslamicModule: React.FC = () => {
     }
 
     // Show hadiths in selected section
+    const sectionName = hadithSections.find(s => s.hapilesection === selectedSection)?.name || `Section ${selectedSection}`;
     return (
       <div className="animate-fade-in space-y-6">
         <button
@@ -795,25 +816,27 @@ const IslamicModule: React.FC = () => {
           <ArrowLeft size={18} /> Back to Sections
         </button>
 
-        <h2 className="text-xl font-bold text-slate-900">Section {selectedSection}</h2>
+        <h2 className="text-xl font-bold text-slate-900">{sectionName}</h2>
 
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20">
             <Loader2 className="animate-spin text-emerald-600 mb-4" size={48} />
             <p className="text-slate-500">Loading hadiths...</p>
           </div>
+        ) : hadiths.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <Book size={48} className="text-slate-300 mb-4" />
+            <p className="text-slate-500">No hadiths found in this section</p>
+          </div>
         ) : (
           <div className="space-y-4">
-            {hadiths.map((hadith, index) => (
+            {hadiths.slice(0, 20).map((hadith, index) => (
               <div key={index} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
                 <div className="flex items-center gap-2 mb-4">
                   <span className="text-xs font-bold bg-emerald-50 text-emerald-600 px-2 py-1 rounded-md">
                     Hadith #{hadith.hadithnumber}
                   </span>
                 </div>
-                <p className="font-amiri text-xl text-right leading-loose mb-4 text-slate-800" dir="rtl">
-                  {hadith.arabicnumber || hadith.hadithnumber}
-                </p>
                 <p className="text-slate-700 leading-relaxed">{hadith.text}</p>
                 {hadith.grades && hadith.grades.length > 0 && (
                   <div className="mt-4 pt-4 border-t border-slate-100">
@@ -822,6 +845,11 @@ const IslamicModule: React.FC = () => {
                 )}
               </div>
             ))}
+            {hadiths.length > 20 && (
+              <p className="text-center text-slate-500 text-sm py-4">
+                Showing first 20 of {hadiths.length} hadiths
+              </p>
+            )}
           </div>
         )}
       </div>

@@ -214,16 +214,24 @@ export const getTafsirForAyah = async (
 // HADITH API
 // ============================================
 
-export interface HadithEdition {
+export interface HadithBook {
   name: string;
-  collection: string[];
+  collection: HadithEditionDetail[];
+}
+
+export interface HadithEditionDetail {
+  name: string;
+  book: string;
+  author: string;
   language: string;
+  has_sections: boolean;
+  direction: string;
+  link: string;
 }
 
 export interface HadithSection {
-  hapiChapterNumber: string;
-  hapiChapterTitle: string;
-  hapiChapterIntro?: string;
+  hapilesection: number;
+  name: string;
 }
 
 export interface Hadith {
@@ -231,11 +239,21 @@ export interface Hadith {
   arabicnumber?: number;
   text: string;
   grades?: { name: string; grade: string }[];
+  reference?: { book: number; hadith: number };
 }
 
-// Get all Hadith editions
-export const getHadithEditions = async (): Promise<Record<string, HadithEdition>> => {
-  const cached = getCached<Record<string, HadithEdition>>(CACHE_KEYS.HADITH_EDITIONS);
+export interface HadithFullEdition {
+  metadata: {
+    name: string;
+    sections: Record<string, string>;
+    section_details: Record<string, { hadithnumber_first: number; hadithnumber_last: number }>;
+  };
+  hadiths: Hadith[];
+}
+
+// Get all Hadith editions (book -> language -> edition mapping)
+export const getHadithEditions = async (): Promise<Record<string, HadithBook>> => {
+  const cached = getCached<Record<string, HadithBook>>(CACHE_KEYS.HADITH_EDITIONS);
   if (cached) return cached;
 
   const response = await fetch(`${HADITH_API_BASE}/editions.json`);
@@ -246,41 +264,59 @@ export const getHadithEditions = async (): Promise<Record<string, HadithEdition>
   return data;
 };
 
-// Get Hadith collection info
-export const getHadithInfo = async (): Promise<Record<string, any>> => {
-  const response = await fetch(`${HADITH_API_BASE}/info.json`);
-  if (!response.ok) throw new Error('Failed to fetch Hadith info');
-  return await response.json();
-};
-
-// Get sections of a Hadith collection
-export const getHadithSections = async (edition: string): Promise<HadithSection[]> => {
-  const cacheKey = `hadith_sections_${edition}`;
-  const cached = getCached<HadithSection[]>(cacheKey);
+// Get full Hadith edition with all data
+export const getHadithEditionFull = async (editionName: string): Promise<HadithFullEdition> => {
+  const cacheKey = `hadith_full_${editionName}`;
+  const cached = getCached<HadithFullEdition>(cacheKey);
   if (cached) return cached;
 
-  const response = await fetch(`${HADITH_API_BASE}/editions/${edition}/sections.json`);
-  if (!response.ok) throw new Error(`Failed to fetch sections for ${edition}`);
+  const response = await fetch(`${HADITH_API_BASE}/editions/${editionName}.json`);
+  if (!response.ok) throw new Error(`Failed to fetch edition ${editionName}`);
 
   const data = await response.json();
   setCache(cacheKey, data);
   return data;
 };
 
+// Get sections of a Hadith collection from the full edition
+export const getHadithSections = async (editionName: string): Promise<HadithSection[]> => {
+  const cacheKey = `hadith_sections_${editionName}`;
+  const cached = getCached<HadithSection[]>(cacheKey);
+  if (cached) return cached;
+
+  const fullEdition = await getHadithEditionFull(editionName);
+  const sections = Object.entries(fullEdition.metadata.sections)
+    .filter(([key]) => key !== '0') // Skip empty section 0
+    .map(([key, name]) => ({
+      hapilesection: parseInt(key),
+      name: name as string
+    }));
+
+  setCache(cacheKey, sections);
+  return sections;
+};
+
 // Get hadiths from a specific section
 export const getHadithsBySection = async (
-  edition: string,
+  editionName: string,
   sectionNumber: number
 ): Promise<Hadith[]> => {
-  const cacheKey = `hadith_${edition}_section_${sectionNumber}`;
+  const cacheKey = `hadith_${editionName}_section_${sectionNumber}`;
   const cached = getCached<Hadith[]>(cacheKey);
   if (cached) return cached;
 
-  const response = await fetch(`${HADITH_API_BASE}/editions/${edition}/sections/${sectionNumber}.json`);
-  if (!response.ok) throw new Error(`Failed to fetch hadiths for section ${sectionNumber}`);
+  const fullEdition = await getHadithEditionFull(editionName);
+  const sectionDetails = fullEdition.metadata.section_details[sectionNumber.toString()];
 
-  const data = await response.json();
-  const hadiths = data.hadiths || data;
+  if (!sectionDetails) {
+    return [];
+  }
+
+  const hadiths = fullEdition.hadiths.filter(
+    h => h.hadithnumber >= sectionDetails.hadithnumber_first &&
+         h.hadithnumber <= sectionDetails.hadithnumber_last
+  );
+
   setCache(cacheKey, hadiths);
   return hadiths;
 };
