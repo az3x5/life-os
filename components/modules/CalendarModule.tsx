@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -23,12 +23,14 @@ import {
   isToday 
 } from 'date-fns';
 import { CalendarEvent } from '../../types';
-import { MOCK_EVENTS, MOCK_REMINDERS, MOCK_HABITS } from '../../constants';
+import { useCalendar } from '../../hooks/useData';
 
 const CalendarModule: React.FC = () => {
+  const { events, createEvent, updateEvent, deleteEvent, loading } = useCalendar();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
 
   // New Event Form State
   const [newEventTitle, setNewEventTitle] = useState('');
@@ -79,28 +81,56 @@ const CalendarModule: React.FC = () => {
     setSelectedDate(now);
   };
 
-  const handleAddEvent = () => {
-    // In a real app, dispatch to store/API
-    console.log("Adding event:", { newEventTitle, newEventDate, newEventStartTime });
+  const handleSaveEvent = async () => {
+    const eventData = {
+      title: newEventTitle,
+      date: new Date(newEventDate),
+      startTime: newEventStartTime,
+      endTime: newEventEndTime,
+      category: newEventCategory,
+      location: newEventLocation,
+    };
+
+    if (editingEvent) {
+      await updateEvent(editingEvent.id, eventData);
+    } else {
+      await createEvent(eventData);
+    }
     setIsAddModalOpen(false);
-    // Reset form
-    setNewEventTitle('');
-    setNewEventLocation('');
   };
 
-  const openAddModal = () => {
-    setNewEventDate(format(selectedDate, 'yyyy-MM-dd'));
+  const openModal = (event: CalendarEvent | null = null) => {
+    setEditingEvent(event);
+    if (event) {
+      setNewEventTitle(event.title);
+      setNewEventDate(format(new Date(event.date), 'yyyy-MM-dd'));
+      setNewEventStartTime(event.startTime);
+      setNewEventEndTime(event.endTime);
+      setNewEventCategory(event.category as any);
+      setNewEventLocation(event.location || '');
+    } else {
+      setNewEventTitle('');
+      setNewEventDate(format(selectedDate, 'yyyy-MM-dd'));
+      setNewEventStartTime('09:00');
+      setNewEventEndTime('10:00');
+      setNewEventCategory('work');
+      setNewEventLocation('');
+    }
     setIsAddModalOpen(true);
   };
+  
+  const handleDeleteEvent = async (id: string) => {
+    if (window.confirm('Are you sure you want to delete this event?')) {
+      await deleteEvent(id);
+    }
+  }
 
-  // Mock filtering logic for the side panel
-  const selectedDayEvents = MOCK_EVENTS.filter(event => 
-    isSameDay(event.date, selectedDate)
+  // Filtering logic for the side panel
+  const selectedDayEvents = events.filter(event => 
+    isSameDay(new Date(event.date), selectedDate)
   );
   
-  // For demo purposes, show reminders and habits only on "today" or generally available
-  const isSelectedToday = isToday(selectedDate);
-  const todaysReminders = isSelectedToday ? MOCK_REMINDERS : [];
+  const todaysReminders: any[] = [];
 
   const getCategoryColor = (category: string) => {
     switch (category) {
@@ -155,7 +185,7 @@ const CalendarModule: React.FC = () => {
               Today
             </button>
             <button 
-              onClick={openAddModal}
+              onClick={() => openModal()}
               className="flex items-center gap-2 px-3 sm:px-4 py-2 text-sm font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-xl transition-colors shadow-lg shadow-slate-200 active:scale-95"
             >
               <Plus size={18} />
@@ -179,7 +209,7 @@ const CalendarModule: React.FC = () => {
             const isCurrentMonth = isSameMonth(day, currentDate);
             const isSelected = isSameDay(day, selectedDate);
             const isDayToday = isToday(day);
-            const dayEvents = MOCK_EVENTS.filter(e => isSameDay(e.date, day));
+            const dayEvents = events.filter(e => isSameDay(new Date(e.date), day));
 
             return (
               <div 
@@ -269,7 +299,7 @@ const CalendarModule: React.FC = () => {
             <div className="flex items-center justify-between mb-4">
               <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Schedule</h4>
               <button 
-                onClick={openAddModal}
+                onClick={() => openModal()}
                 className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors active:bg-blue-100"
               >
                 <Plus size={16} />
@@ -285,7 +315,7 @@ const CalendarModule: React.FC = () => {
                       event.category === 'personal' ? 'bg-purple-400' :
                       event.category === 'health' ? 'bg-emerald-400' : 'bg-teal-400'
                     }`} />
-                    <div className="bg-slate-50 group-hover:bg-slate-100 p-3 rounded-xl border border-transparent group-hover:border-slate-200 transition-all cursor-pointer">
+                    <div onClick={() => openModal(event)} className="bg-slate-50 group-hover:bg-slate-100 p-3 rounded-xl border border-transparent group-hover:border-slate-200 transition-all cursor-pointer">
                       <h5 className="text-sm font-semibold text-slate-900">{event.title}</h5>
                       <div className="flex items-center gap-3 mt-2 text-xs text-slate-500">
                         <div className="flex items-center gap-1">
@@ -356,7 +386,7 @@ const CalendarModule: React.FC = () => {
               <X size={24} />
             </button>
             
-            <h3 className="text-xl font-bold text-slate-900 mb-6">New Event</h3>
+            <h3 className="text-xl font-bold text-slate-900 mb-6">{editingEvent ? 'Edit Event' : 'New Event'}</h3>
             
             <div className="space-y-5">
               <div>
@@ -441,11 +471,11 @@ const CalendarModule: React.FC = () => {
               
               <div className="pt-4">
                  <button 
-                    onClick={handleAddEvent}
+                    onClick={handleSaveEvent}
                     disabled={!newEventTitle}
                     className="w-full bg-slate-900 text-white py-3.5 rounded-xl font-bold hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-slate-200 active:scale-95"
                  >
-                    Create Event
+                    {editingEvent ? 'Save Changes' : 'Create Event'}
                  </button>
               </div>
             </div>

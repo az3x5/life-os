@@ -37,7 +37,7 @@ type CategoryFilter = 'all' | 'health' | 'work' | 'personal' | 'islamic';
 
 const HabitsModule: React.FC = () => {
   // API Hook
-  const { habits: apiHabits, loading, logCompletion, createHabit: apiCreateHabit } = useHabits();
+  const { habits: apiHabits, loading, logCompletion, createHabit, updateHabit, deleteHabit } = useHabits();
 
   // Local state synced with API
   const [habits, setHabits] = useState<Habit[]>([]);
@@ -67,16 +67,25 @@ const HabitsModule: React.FC = () => {
       setHabits(transformedHabits);
     }
   }, [apiHabits, loading]);
+  
   const [viewMode, setViewMode] = useState<ViewMode>('daily');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedCategory, setSelectedCategory] = useState<CategoryFilter>('all');
   const [selectedHabit, setSelectedHabit] = useState<Habit | null>(null);
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingHabit, setEditingHabit] = useState<Habit | null>(null);
+
+  // Form State
+  const [habitName, setHabitName] = useState('');
+  const [habitCategory, setHabitCategory] = useState('personal');
+  const [habitFrequency, setHabitFrequency] = useState('daily');
+  const [habitColor, setHabitColor] = useState('blue');
+  const [habitIcon, setHabitIcon] = useState('Activity');
 
   // Stats
   const completedToday = habits.filter(h => h.completed).length;
   const totalActive = habits.filter(h => h.status === 'active').length;
-  const progressPercentage = Math.round((completedToday / totalActive) * 100);
+  const progressPercentage = totalActive > 0 ? Math.round((completedToday / totalActive) * 100) : 0;
 
   // Filters
   const filteredHabits = habits.filter(h => {
@@ -86,6 +95,48 @@ const HabitsModule: React.FC = () => {
   });
 
   // Handlers
+  const openModal = (habit: Habit | null = null) => {
+    setEditingHabit(habit);
+    if (habit) {
+      setHabitName(habit.name);
+      setHabitCategory(habit.category);
+      setHabitFrequency(habit.frequency);
+      setHabitColor(habit.color);
+      setHabitIcon(habit.icon || 'Activity');
+    } else {
+      setHabitName('');
+      setHabitCategory('personal');
+      setHabitFrequency('daily');
+      setHabitColor('blue');
+      setHabitIcon('Activity');
+    }
+    setIsModalOpen(true);
+  }
+
+  const handleSaveHabit = async () => {
+    const habitData = {
+      name: habitName,
+      category: habitCategory,
+      frequency: habitFrequency,
+      color: habitColor,
+      icon: habitIcon,
+    };
+
+    if (editingHabit) {
+      await updateHabit(editingHabit.id, habitData);
+    } else {
+      await createHabit(habitData);
+    }
+    setIsModalOpen(false);
+  };
+  
+  const handleDeleteHabit = async (id: string) => {
+    if (window.confirm('Are you sure you want to archive this habit?')) {
+      await deleteHabit(id);
+      setSelectedHabit(null);
+    }
+  }
+
   const toggleHabitToday = async (id: string) => {
     const habit = habits.find(h => h.id === id);
     if (!habit) return;
@@ -93,26 +144,13 @@ const HabitsModule: React.FC = () => {
     const today = new Date().toISOString().split('T')[0];
     const newCompleted = !habit.completed;
 
-    // Optimistic update
-    setHabits(habits.map(h => {
-      if (h.id === id) {
-        return { ...h, completed: newCompleted };
-      }
-      return h;
-    }));
+    setHabits(habits.map(h => h.id === id ? { ...h, completed: newCompleted } : h));
 
-    // API call
     try {
       await logCompletion(id, today, newCompleted);
     } catch (error) {
       console.error('Failed to log habit:', error);
-      // Revert on error
-      setHabits(habits.map(h => {
-        if (h.id === id) {
-          return { ...h, completed: !newCompleted };
-        }
-        return h;
-      }));
+      setHabits(habits.map(h => h.id === id ? { ...h, completed: !newCompleted } : h));
     }
   };
 
@@ -205,7 +243,7 @@ const HabitsModule: React.FC = () => {
             </button>
           </div>
           <button 
-            onClick={() => setIsAddModalOpen(true)}
+            onClick={() => openModal()}
             className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors shadow-lg shadow-slate-200 ml-auto lg:ml-0"
           >
             <Plus size={18} />
@@ -256,7 +294,7 @@ const HabitsModule: React.FC = () => {
                         className={`
                           w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300
                           ${habit.completed 
-                            ? `${styles.bg.replace('50', '500')} text-white shadow-md scale-100` 
+                            ? `${styles.bar} text-white shadow-md scale-100` 
                             : 'bg-slate-100 text-slate-300 hover:bg-slate-200'
                           }
                         `}
@@ -277,7 +315,7 @@ const HabitsModule: React.FC = () => {
 
                     <div className="flex items-center gap-4 mt-6">
                       <div className="flex items-center gap-1.5 text-slate-600 bg-slate-50 px-2 py-1 rounded-md">
-                        <Flame size={14} className={habit.streak > 0 ? "text-orange-500 fill-orange-500" : "text-slate-300"} />
+                        <Flame size={14} className={habit.streak > 0 ? "text-orange-500 fill-current" : "text-slate-300"} />
                         <span className="text-xs font-bold">{habit.streak} Day Streak</span>
                       </div>
                       
@@ -316,8 +354,7 @@ const HabitsModule: React.FC = () => {
                     <tbody>
                       {filteredHabits.map((habit) => {
                          const styles = getColorClasses(habit.color);
-                         // Pad history to 30 days if needed
-                         const displayHistory = [...habit.history].reverse().slice(0, 30).reverse(); // Simplified logic
+                         const displayHistory = [...habit.history].reverse().slice(0, 30).reverse();
                          
                          return (
                            <tr key={habit.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
@@ -330,8 +367,7 @@ const HabitsModule: React.FC = () => {
                                  </div>
                               </td>
                               {Array.from({ length: 30 }).map((_, i) => {
-                                 const dayIndex = 29 - i; // reverse index
-                                 // Mock data alignment (in real app, match date key)
+                                 const dayIndex = 29 - i;
                                  const log = displayHistory[displayHistory.length - 1 - dayIndex]; 
                                  const status = log?.status || 'missed';
                                  
@@ -339,7 +375,7 @@ const HabitsModule: React.FC = () => {
                                     <td key={i} className="p-2 text-center">
                                        <div className={`
                                           w-6 h-6 mx-auto rounded-md flex items-center justify-center transition-all
-                                          ${status === 'completed' ? styles.bg + ' ' + styles.text : ''}
+                                          ${status === 'completed' ? `${styles.bar} text-white` : ''}
                                           ${status === 'skipped' ? 'bg-slate-100 text-slate-400' : ''}
                                           ${status === 'missed' ? 'text-slate-200' : ''}
                                        `}>
@@ -392,7 +428,7 @@ const HabitsModule: React.FC = () => {
                   <div className="p-4 rounded-2xl bg-slate-50 text-center">
                      <div className="text-xs text-slate-500 uppercase font-bold mb-1">Streak</div>
                      <div className="text-xl font-bold text-slate-900 flex items-center justify-center gap-1">
-                        {selectedHabit.streak} <Flame size={16} className="text-orange-500 fill-orange-500" />
+                        {selectedHabit.streak} <Flame size={16} className="text-orange-500 fill-current" />
                      </div>
                   </div>
                   <div className="p-4 rounded-2xl bg-slate-50 text-center">
@@ -406,10 +442,10 @@ const HabitsModule: React.FC = () => {
                </div>
 
                <div className="space-y-3 pt-2">
-                  <button className="w-full py-3 rounded-xl bg-slate-900 text-white font-medium hover:bg-slate-800 transition-colors">
+                  <button onClick={() => { setSelectedHabit(null); openModal(selectedHabit); }} className="w-full py-3 rounded-xl bg-slate-900 text-white font-medium hover:bg-slate-800 transition-colors">
                      Edit Habit
                   </button>
-                  <button className="w-full py-3 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 transition-colors flex items-center justify-center gap-2">
+                  <button onClick={() => handleDeleteHabit(selectedHabit.id)} className="w-full py-3 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 transition-colors flex items-center justify-center gap-2">
                      <Archive size={18} />
                      Archive Habit
                   </button>
@@ -419,21 +455,23 @@ const HabitsModule: React.FC = () => {
         </div>
       )}
 
-      {/* Add Habit Modal (Simplified) */}
-      {isAddModalOpen && (
+      {/* Add/Edit Habit Modal */}
+      {isModalOpen && (
          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4 animate-in fade-in duration-200">
             <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl p-6 relative">
-               <button onClick={() => setIsAddModalOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+               <button onClick={() => setIsModalOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
                   <X size={24} />
                </button>
 
-               <h3 className="text-xl font-bold text-slate-900 mb-6">Create New Habit</h3>
+               <h3 className="text-xl font-bold text-slate-900 mb-6">{editingHabit ? 'Edit' : 'Create New'} Habit</h3>
                
                <div className="space-y-4">
                   <div>
                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Habit Name</label>
                      <input 
                         type="text" 
+                        value={habitName}
+                        onChange={(e) => setHabitName(e.target.value)}
                         className="w-full border border-slate-200 rounded-xl px-4 py-3 text-base md:text-sm focus:ring-2 focus:ring-slate-900 focus:border-transparent outline-none placeholder-slate-400 text-slate-900" 
                         placeholder="e.g., Drink Water" 
                      />
@@ -441,28 +479,28 @@ const HabitsModule: React.FC = () => {
                   <div className="grid grid-cols-2 gap-4">
                      <div>
                         <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Category</label>
-                        <select className="w-full border border-slate-200 rounded-xl px-4 py-3 text-base md:text-sm bg-white focus:ring-2 focus:ring-slate-900 outline-none text-slate-900">
-                           <option>Health</option>
-                           <option>Work</option>
-                           <option>Personal</option>
-                           <option>Islamic</option>
+                        <select value={habitCategory} onChange={(e) => setHabitCategory(e.target.value)} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-base md:text-sm bg-white focus:ring-2 focus:ring-slate-900 outline-none text-slate-900 capitalize">
+                           <option value="health">Health</option>
+                           <option value="work">Work</option>
+                           <option value="personal">Personal</option>
+                           <option value="islamic">Islamic</option>
                         </select>
                      </div>
                      <div>
                         <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Frequency</label>
-                        <select className="w-full border border-slate-200 rounded-xl px-4 py-3 text-base md:text-sm bg-white focus:ring-2 focus:ring-slate-900 outline-none text-slate-900">
-                           <option>Daily</option>
-                           <option>Weekly</option>
+                        <select value={habitFrequency} onChange={(e) => setHabitFrequency(e.target.value)} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-base md:text-sm bg-white focus:ring-2 focus:ring-slate-900 outline-none text-slate-900 capitalize">
+                           <option value="daily">Daily</option>
+                           <option value="weekly">Weekly</option>
                         </select>
                      </div>
                   </div>
                   
                   <div className="pt-4">
                      <button 
-                        onClick={() => setIsAddModalOpen(false)}
+                        onClick={handleSaveHabit}
                         className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold hover:bg-slate-800 transition-colors shadow-lg shadow-slate-200"
                      >
-                        Create Habit
+                        {editingHabit ? 'Save Changes' : 'Create Habit'}
                      </button>
                   </div>
                </div>

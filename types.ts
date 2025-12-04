@@ -163,15 +163,16 @@ export interface CalendarEvent {
 }
 
 export interface Dua {
-  id: string;
-  title: string;
-  category: string;
-  arabic: string;
-  transliteration: string;
-  translation: string;
-  reference?: string;
-  audioUrl?: string;
-  isFavorite: boolean;
+  dua_id: number;
+  dua_arabic: string;
+  dua_english: string;
+  reference_english: string;
+}
+
+export interface Hadith {
+  hadith_number: number;
+  text_ar: string;
+  text_en: string;
 }
 
 // Nested Hadith Structure

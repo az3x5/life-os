@@ -151,5 +151,44 @@ router.post('/goals', async (req: Request, res: Response) => {
   }
 });
 
+// PUT update health goal
+router.put('/goals/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    const { data, error } = await supabase
+      .from('health_goals')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (error: any) {
+    console.error('Error updating health goal:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE health goal
+router.delete('/goals/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const { error } = await supabase
+      .from('health_goals')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Error deleting health goal:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;
 

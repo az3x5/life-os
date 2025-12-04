@@ -5,6 +5,9 @@ import habitsRouter from './habits';
 import financeRouter from './finance';
 import healthRouter from './health';
 import goalsRouter from './goals';
+import calendarRouter from './calendar';
+import duasRouter from './duas';
+import usersRouter from './users';
 
 const router = Router();
 
@@ -15,6 +18,9 @@ router.use('/habits', habitsRouter);
 router.use('/finance', financeRouter);
 router.use('/health', healthRouter);
 router.use('/goals', goalsRouter);
+router.use('/calendar', calendarRouter);
+router.use('/duas', duasRouter);
+router.use('/users', usersRouter);
 
 // Legacy routes for backwards compatibility
 router.use('/transactions', financeRouter);

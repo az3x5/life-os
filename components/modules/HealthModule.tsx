@@ -15,7 +15,9 @@ import {
   Calendar,
   X,
   ChevronRight,
-  Loader2
+  Loader2,
+  Edit2,
+  Trash2
 } from 'lucide-react';
 import { HealthLog } from '../../types';
 import { format, addDays } from 'date-fns';
@@ -26,11 +28,12 @@ type TimeRange = 'daily' | 'weekly' | 'monthly';
 
 const HealthModule: React.FC = () => {
   // API Hook
-  const { logs: apiLogs, loading, logEntry: apiLogEntry } = useHealth();
+  const { logs: apiLogs, loading, logEntry, updateLog, deleteLog } = useHealth();
 
   const [activeMetric, setActiveMetric] = useState<MetricType>('weight');
   const [timeRange, setTimeRange] = useState<TimeRange>('weekly');
   const [history, setHistory] = useState<HealthLog[]>([]);
+  const [editingLog, setEditingLog] = useState<HealthLog | null>(null);
 
   // Sync API logs to local state
   useEffect(() => {
@@ -42,21 +45,21 @@ const HealthModule: React.FC = () => {
   // Layout State
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Add Entry Form State
   const [newValue, setNewValue] = useState('');
-  const [newDate, setNewDate] = useState(format(new Date(), 'yyyy-MM-dd HH:mm'));
+  const [newDate, setNewDate] = useState(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
   const [newNote, setNewNote] = useState('');
 
   // Config for each metric
-  const metricConfig: Record<string, { label: string, unit: string, icon: any, color: string, colorBg: string, colorText: string }> = {
-    weight: { label: 'Weight', unit: 'kg', icon: Weight, color: 'blue', colorBg: 'bg-blue-50', colorText: 'text-blue-600' },
-    steps: { label: 'Steps', unit: 'steps', icon: Footprints, color: 'orange', colorBg: 'bg-orange-50', colorText: 'text-orange-600' },
-    sleep: { label: 'Sleep', unit: 'hrs', icon: Moon, color: 'indigo', colorBg: 'bg-indigo-50', colorText: 'text-indigo-600' },
-    water: { label: 'Water', unit: 'ml', icon: Droplets, color: 'cyan', colorBg: 'bg-cyan-50', colorText: 'text-cyan-600' },
-    bp: { label: 'Heart Rate', unit: 'bpm', icon: Heart, color: 'rose', colorBg: 'bg-rose-50', colorText: 'text-rose-600' },
-    exercise: { label: 'Exercise', unit: 'mins', icon: Dumbbell, color: 'emerald', colorBg: 'bg-emerald-50', colorText: 'text-emerald-600' },
+  const metricConfig: Record<string, { id: number, label: string, unit: string, icon: any, color: string, colorBg: string, colorText: string }> = {
+    weight: { id: 1, label: 'Weight', unit: 'kg', icon: Weight, color: 'blue', colorBg: 'bg-blue-50', colorText: 'text-blue-600' },
+    steps: { id: 2, label: 'Steps', unit: 'steps', icon: Footprints, color: 'orange', colorBg: 'bg-orange-50', colorText: 'text-orange-600' },
+    sleep: { id: 3, label: 'Sleep', unit: 'hrs', icon: Moon, color: 'indigo', colorBg: 'bg-indigo-50', colorText: 'text-indigo-600' },
+    water: { id: 4, label: 'Water', unit: 'ml', icon: Droplets, color: 'cyan', colorBg: 'bg-cyan-50', colorText: 'text-cyan-600' },
+    bp: { id: 5, label: 'Heart Rate', unit: 'bpm', icon: Heart, color: 'rose', colorBg: 'bg-rose-50', colorText: 'text-rose-600' },
+    exercise: { id: 6, label: 'Exercise', unit: 'mins', icon: Dumbbell, color: 'emerald', colorBg: 'bg-emerald-50', colorText: 'text-emerald-600' },
   };
 
   // Filter Data for Chart
@@ -71,34 +74,53 @@ const HealthModule: React.FC = () => {
     return [...chartData].reverse();
   }, [chartData]);
 
-  // Handle Add Entry
-  const handleAddEntry = async () => {
+  // Open Modal
+  const openModal = (log: HealthLog | null = null) => {
+    setEditingLog(log);
+    if (log) {
+      setNewValue(log.value.toString());
+      setNewDate(format(new Date(log.date), "yyyy-MM-dd'T'HH:mm"));
+      setNewNote(log.note || '');
+    } else {
+      setNewValue('');
+      setNewDate(format(new Date(), "yyyy-MM-dd'T'HH:mm"));
+      setNewNote('');
+    }
+    setIsModalOpen(true);
+  }
+
+  // Handle Save (Create/Update)
+  const handleSaveEntry = async () => {
     if (!newValue) return;
     
-    const entry: HealthLog = {
-      id: Date.now().toString(),
-      type: activeMetric as any,
+    const metricId = metricConfig[activeMetric].id;
+    const entryData = {
+      metric_id: metricId,
       value: Number(newValue),
-      date: new Date(newDate),
-      note: newNote
+      date: new Date(newDate).toISOString(),
+      notes: newNote
     };
 
     try {
-      await apiLogEntry({
-        type: activeMetric,
-        value: Number(newValue),
-        date: newDate,
-        notes: newNote
-      });
-      setHistory([entry, ...history]);
+      if (editingLog) {
+        await updateLog(editingLog.id, entryData);
+      } else {
+        await logEntry(entryData);
+      }
     } catch (error) {
-      console.error('Failed to log health entry:', error);
+      console.error('Failed to save health entry:', error);
     }
 
-    setIsAddModalOpen(false);
-    setNewValue('');
-    setNewNote('');
+    setIsModalOpen(false);
+    setEditingLog(null);
   };
+  
+  // Handle Delete
+  const handleDeleteLog = async (id: string) => {
+    if (window.confirm('Are you sure you want to delete this entry?')) {
+      await deleteLog(id);
+    }
+  }
 
   // Get Current/Latest Value
   const getLatestValue = (type: string) => {
@@ -114,10 +136,10 @@ const HealthModule: React.FC = () => {
     let displayData = [...data];
     const today = new Date();
     if (range === 'daily') displayData = displayData.slice(-7); // Last 7 entries
-    if (range === 'weekly') displayData = displayData.filter(d => d.date >= addDays(today, -30)); // Last 30 days
+    if (range === 'weekly') displayData = displayData.filter(d => new Date(d.date) >= addDays(today, -30)); // Last 30 days
     // Monthly shows all
 
-    if (displayData.length === 0) return <div className="h-64 flex items-center justify-center text-slate-400">No data for this period</div>;
+    if (displayData.length < 2) return <div className="h-64 flex items-center justify-center text-slate-400">No data for this period</div>;
 
     const values = displayData.map(d => d.value);
     const min = Math.min(...values);
@@ -147,15 +169,14 @@ const HealthModule: React.FC = () => {
             {/* Gradient Fill */}
             <defs>
                <linearGradient id="gradient" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stopColor="currentColor" className={`${config.colorText.replace('text-', 'text-opacity-20 ')}`} />
-                  <stop offset="100%" stopColor="currentColor" className={`${config.colorText.replace('text-', 'text-opacity-0 ')}`} />
+                  <stop offset="0%" stopColor="currentColor" stopOpacity="0.2" />
+                  <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
                </linearGradient>
             </defs>
             <path 
                d={`M0,${height} ${points.split(' ').map((p, i) => `L${p}`).join(' ')} L${width},${height} Z`} 
                fill="url(#gradient)" 
                className={config.colorText}
-               style={{ opacity: 0.2 }}
             />
 
             {/* Line */}
@@ -174,16 +195,21 @@ const HealthModule: React.FC = () => {
                const x = (i / (displayData.length - 1)) * width;
                const y = height - ((d.value - (min - padding)) / ((max + padding) - (min - padding))) * height;
                return (
-                  <circle 
-                     key={i} 
-                     cx={x} 
-                     cy={y} 
-                     r="4" 
-                     className="fill-white stroke-current stroke-2 group hover:scale-150 transition-transform origin-center"
-                     style={{ color: 'inherit' }} // Inherits from parent wrapper usually, handled by class below
-                  >
-                     <title>{`${d.value} ${config.unit} • ${format(new Date(d.date), 'MMM d')}`}</title>
-                  </circle>
+                  <g key={i} className="group">
+                    <circle 
+                       cx={x} 
+                       cy={y} 
+                       r="4" 
+                       className="fill-white stroke-current stroke-2"
+                       style={{ color: 'inherit' }}
+                    />
+                     <foreignObject x={x - 50} y={y - 50} width="100" height="40" className="opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                       <div className="bg-slate-800 text-white text-xs rounded-md shadow-lg p-2 text-center">
+                         <div>{`${d.value} ${config.unit}`}</div>
+                         <div className="text-slate-300">{format(new Date(d.date), 'MMM d')}</div>
+                       </div>
+                     </foreignObject>
+                  </g>
                );
             })}
          </svg>
@@ -308,7 +334,7 @@ const HealthModule: React.FC = () => {
                 ))}
              </div>
              <button 
-               onClick={() => setIsAddModalOpen(true)}
+               onClick={() => openModal()}
                className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors shadow-lg shadow-slate-200"
             >
                <Plus size={18} />
@@ -342,7 +368,7 @@ const HealthModule: React.FC = () => {
                     {recentLogs.length > 0 ? (
                        <div className="divide-y divide-slate-50">
                           {recentLogs.map((log) => (
-                             <div key={log.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                             <div key={log.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors group">
                                 <div className="flex items-center gap-4">
                                    <div className={`p-2 rounded-lg ${metricConfig[activeMetric].colorBg} ${metricConfig[activeMetric].colorText}`}>
                                       {React.createElement(metricConfig[activeMetric].icon, { size: 20 })}
@@ -360,11 +386,17 @@ const HealthModule: React.FC = () => {
                                       </div>
                                    </div>
                                 </div>
-                                {log.note && (
-                                   <div className="hidden sm:block text-sm text-slate-500 bg-slate-50 px-3 py-1 rounded-full border border-slate-100 max-w-xs truncate">
-                                      {log.note}
-                                   </div>
-                                )}
+                                <div className="flex items-center gap-2">
+                                  {log.note && (
+                                     <div className="hidden sm:block text-sm text-slate-500 bg-slate-50 px-3 py-1 rounded-full border border-slate-100 max-w-xs truncate">
+                                        {log.note}
+                                     </div>
+                                  )}
+                                  <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                                    <button onClick={() => openModal(log)} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg"><Edit2 size={16}/></button>
+                                    <button onClick={() => handleDeleteLog(log.id)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-100 rounded-lg"><Trash2 size={16}/></button>
+                                  </div>
+                                </div>
                              </div>
                           ))}
                        </div>
@@ -381,11 +413,11 @@ const HealthModule: React.FC = () => {
 
       </div>
 
-      {/* Add Entry Modal */}
-      {isAddModalOpen && (
+      {/* Add/Edit Entry Modal */}
+      {isModalOpen && (
          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4 animate-in fade-in duration-200">
             <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 relative">
-               <button onClick={() => setIsAddModalOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+               <button onClick={() => setIsModalOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
                   <X size={24} />
                </button>
                
@@ -394,8 +426,8 @@ const HealthModule: React.FC = () => {
                      {React.createElement(metricConfig[activeMetric].icon, { size: 24 })}
                   </div>
                   <div>
-                     <h3 className="text-xl font-bold text-slate-900">Log {metricConfig[activeMetric].label}</h3>
-                     <p className="text-sm text-slate-500">Add a new data point</p>
+                     <h3 className="text-xl font-bold text-slate-900">{editingLog ? 'Edit' : 'Log'} {metricConfig[activeMetric].label}</h3>
+                     <p className="text-sm text-slate-500">{editingLog ? 'Update the data point' : 'Add a new data point'}</p>
                   </div>
                </div>
 
@@ -436,11 +468,11 @@ const HealthModule: React.FC = () => {
                   </div>
 
                   <button 
-                     onClick={handleAddEntry}
+                     onClick={handleSaveEntry}
                      disabled={!newValue}
                      className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-slate-200 mt-2"
                   >
-                     Save Entry
+                     {editingLog ? 'Save Changes' : 'Save Entry'}
                   </button>
                </div>
             </div>

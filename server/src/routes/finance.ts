@@ -115,6 +115,25 @@ router.put('/accounts/:id', async (req: Request, res: Response) => {
   }
 });
 
+// DELETE account
+router.delete('/accounts/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Delete associated transactions first
+    await supabase.from('transactions').delete().eq('account_id', id);
+
+    // Delete the account
+    const { error } = await supabase.from('accounts').delete().eq('id', id);
+
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Error deleting account:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET all transactions
 router.get('/transactions', async (req: Request, res: Response) => {
   try {
@@ -130,6 +149,25 @@ router.get('/transactions', async (req: Request, res: Response) => {
     res.json(data);
   } catch (error: any) {
     console.error('Error fetching transactions:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET transaction by ID
+router.get('/transactions/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('*, accounts(name, type)')
+      .eq('id', id)
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (error: any) {
+    console.error('Error fetching transaction:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -180,6 +218,116 @@ router.post('/transactions', async (req: Request, res: Response) => {
     res.status(201).json(transaction);
   } catch (error: any) {
     console.error('Error creating transaction:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PUT update transaction
+router.put('/transactions/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    // Get original transaction to adjust balance
+    const { data: originalTx, error: fetchError } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (fetchError) throw fetchError;
+    if (!originalTx) return res.status(404).json({ error: 'Transaction not found' });
+
+    // Update transaction
+    const { data: updatedTx, error: updateError } = await supabase
+      .from('transactions')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateError) throw updateError;
+
+    // Adjust account balances
+    const oldAccountId = originalTx.account_id;
+    const newAccountId = updatedTx.account_id;
+    const oldAmount = parseFloat(originalTx.amount);
+    const newAmount = parseFloat(updatedTx.amount);
+    const oldType = originalTx.type;
+    const newType = updatedTx.type;
+
+    // Revert old transaction from original account
+    if (oldAccountId) {
+      const { data: oldAccount } = await supabase.from('accounts').select('balance').eq('id', oldAccountId).single();
+      if (oldAccount) {
+        const balanceAdjustment = oldType === 'income' ? -oldAmount : +oldAmount;
+        await supabase
+          .from('accounts')
+          .update({ balance: parseFloat(oldAccount.balance) + balanceAdjustment })
+          .eq('id', oldAccountId);
+      }
+    }
+    
+    // Apply new transaction to new/current account
+    if (newAccountId) {
+        const { data: newAccount } = await supabase.from('accounts').select('balance').eq('id', newAccountId).single();
+        if (newAccount) {
+            const balanceAdjustment = newType === 'income' ? +newAmount : -newAmount;
+            await supabase
+                .from('accounts')
+                .update({ balance: parseFloat(newAccount.balance) + balanceAdjustment })
+                .eq('id', newAccountId);
+        }
+    }
+
+    res.json(updatedTx);
+  } catch (error: any) {
+    console.error('Error updating transaction:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE transaction
+router.delete('/transactions/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Get transaction details to adjust balance
+    const { data: transaction, error: fetchError } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (fetchError) throw fetchError;
+    if (!transaction) return res.status(404).json({ error: 'Transaction not found' });
+    
+    // Delete the transaction
+    const { error: deleteError } = await supabase.from('transactions').delete().eq('id', id);
+    if (deleteError) throw deleteError;
+
+    // Revert balance on the associated account
+    if (transaction.account_id) {
+      const { data: account } = await supabase
+        .from('accounts')
+        .select('balance')
+        .eq('id', transaction.account_id)
+        .single();
+      
+      if (account) {
+        const amount = parseFloat(transaction.amount);
+        const balanceUpdate = transaction.type === 'income' ? -amount : +amount;
+
+        await supabase
+          .from('accounts')
+          .update({ balance: parseFloat(account.balance) + balanceUpdate })
+          .eq('id', transaction.account_id);
+      }
+    }
+    
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Error deleting transaction:', error);
     res.status(500).json({ error: error.message });
   }
 });

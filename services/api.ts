@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Note, Reminder, Transaction, HealthLog, Habit, Account, SavingsGoal } from '../types';
+import { Note, Reminder, Transaction, HealthLog, Habit, Account, SavingsGoal, CalendarEvent, Dua, User } from '../types';
 
 // Use relative /api path in production (Vercel), localhost in development
 const API_URL = import.meta.env.PROD
@@ -149,6 +149,9 @@ export const FinanceService = {
     const { data } = await api.put<Account>(`/finance/accounts/${id}`, account);
     return data;
   },
+  deleteAccount: async (id: string): Promise<void> => {
+    await api.delete(`/finance/accounts/${id}`);
+  },
   getTransactions: async (): Promise<Transaction[]> => {
     const { data } = await api.get<Transaction[]>('/finance/transactions');
     // Transform API response to match frontend Transaction type
@@ -157,6 +160,10 @@ export const FinanceService = {
       date: new Date(t.date),
       account: t.accounts?.name || t.account_id,
     }));
+  },
+  getTransactionById: async (id: string): Promise<Transaction> => {
+    const { data } = await api.get<Transaction>(`/finance/transactions/${id}`);
+    return { ...data, date: new Date((data as any).date) };
   },
   createTransaction: async (tx: Partial<Transaction>): Promise<Transaction> => {
     const payload = {
@@ -169,6 +176,13 @@ export const FinanceService = {
     };
     const { data } = await api.post<Transaction>('/finance/transactions', payload);
     return { ...data, date: new Date((data as any).date) };
+  },
+  updateTransaction: async (id: string, tx: Partial<Transaction>): Promise<Transaction> => {
+    const { data } = await api.put<Transaction>(`/finance/transactions/${id}`, tx);
+    return { ...data, date: new Date((data as any).date) };
+  },
+  deleteTransaction: async (id: string): Promise<void> => {
+    await api.delete(`/finance/transactions/${id}`);
   },
 };
 
@@ -206,6 +220,103 @@ export const HealthService = {
   },
   createGoal: async (goal: { metric_id: number; target_value: number; target_date: string; name: string }): Promise<any> => {
     const { data } = await api.post('/health/goals', goal);
+    return data;
+  },
+};
+
+// Calendar Service
+export const CalendarService = {
+  getAll: async (): Promise<CalendarEvent[]> => {
+    const { data } = await api.get<CalendarEvent[]>('/calendar');
+    return data.map((event: any) => ({
+      ...event,
+      date: new Date(event.date),
+    }));
+  },
+  create: async (event: Partial<CalendarEvent>): Promise<CalendarEvent> => {
+    const { data } = await api.post<CalendarEvent>('/calendar', event);
+    return { ...data, date: new Date(data.date) };
+  },
+  update: async (id: string, event: Partial<CalendarEvent>): Promise<CalendarEvent> => {
+    const { data } = await api.put<CalendarEvent>(`/calendar/${id}`, event);
+    return { ...data, date: new Date(data.date) };
+  },
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/calendar/${id}`);
+  },
+};
+
+// Quran Service
+export const QuranService = {
+    getEditions: async (): Promise<any> => {
+        const { data } = await axios.get('https://cdn.jsdelivr.net/gh/fawazahmed0/quran-api@1/editions.json');
+        return data;
+    },
+    getChapter: async (edition: string, chapter: number): Promise<any> => {
+        const { data } = await axios.get(`https://cdn.jsdelivr.net/gh/fawazahmed0/quran-api@1/editions/${edition}/${chapter}.json`);
+        return data;
+    },
+    getVerse: async (edition: string, chapter: number, verse: number): Promise<any> => {
+        const { data } = await axios.get(`https://cdn.jsdelivr.net/gh/fawazahmed0/quran-api@1/editions/${edition}/${chapter}/${verse}.json`);
+        return data;
+    }
+};
+
+// Hadith Service
+export const HadithService = {
+    getEditions: async (): Promise<any> => {
+        const { data } = await axios.get('https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions.json');
+        return data;
+    },
+    getHadith: async (edition: string, hadithNumber: number): Promise<any> => {
+        const { data } = await axios.get(`https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/${edition}/${hadithNumber}.json`);
+        return data;
+    }
+};
+
+// Tafsir Service
+export const TafsirService = {
+    getEditions: async (): Promise<any> => {
+        const { data } = await axios.get('https://cdn.jsdelivr.net/gh/spa5k/tafsir_api@main/tafsir/editions.json');
+        return data;
+    },
+    getTafsir: async (edition: string, surah: number, ayah: number): Promise<any> => {
+        const { data } = await axios.get(`https://cdn.jsdelivr.net/gh/spa5k/tafsir_api@main/tafsir/${edition}/${surah}/${ayah}.json`);
+        return data;
+    }
+};
+
+// Dua Service
+export const DuaService = {
+  getAll: async (): Promise<Dua[]> => {
+    const { data } = await api.get<Dua[]>('/duas');
+    return data;
+  },
+  create: async (dua: Partial<Dua>): Promise<Dua> => {
+    const { data } = await api.post<Dua>('/duas', dua);
+    return data;
+  },
+  update: async (id: string, dua: Partial<Dua>): Promise<Dua> => {
+    const { data } = await api.put<Dua>(`/duas/${id}`, dua);
+    return data;
+  },
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/duas/${id}`);
+  },
+  getRandomDua: async (): Promise<any> => {
+    const { data } = await axios.get('https://api.du3aa.rest');
+    return data;
+  }
+};
+
+// User Service
+export const UserService = {
+  getProfile: async (): Promise<User> => {
+    const { data } = await api.get<User>('/users/profile');
+    return data;
+  },
+  updateProfile: async (profile: Partial<User>): Promise<User> => {
+    const { data } = await api.put<User>('/users/profile', profile);
     return data;
   },
 };

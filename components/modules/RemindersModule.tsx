@@ -37,6 +37,7 @@ const RemindersModule: React.FC = () => {
     reminders: apiReminders,
     loading,
     createReminder: apiCreateReminder,
+    updateReminder: apiUpdateReminder,
     toggleComplete: apiToggleComplete,
     deleteReminder: apiDeleteReminder
   } = useReminders();
@@ -142,25 +143,19 @@ const RemindersModule: React.FC = () => {
     if (!newTitle) return;
 
     const dateObj = newDate ? new Date(newDate) : new Date();
+    const reminderData = {
+      title: newTitle,
+      dueDate: dateObj,
+      priority: newPriority,
+      category: newCategory as any,
+    };
 
     try {
       if (editingReminder) {
-         // Update existing (local only for now - API update can be added)
-         setReminders(reminders.map(r => r.id === editingReminder.id ? {
-            ...r,
-            title: newTitle,
-            dueDate: dateObj,
-            priority: newPriority,
-            category: newCategory as any
-         } : r));
+         await apiUpdateReminder(editingReminder.id, reminderData);
+         setReminders(reminders.map(r => r.id === editingReminder.id ? { ...editingReminder, ...reminderData } : r));
       } else {
-         // Create new via API
-         const newReminder = await apiCreateReminder({
-           title: newTitle,
-           dueDate: dateObj,
-           priority: newPriority,
-           category: newCategory as any,
-         });
+         const newReminder = await apiCreateReminder(reminderData);
          setReminders([...reminders, newReminder]);
       }
     } catch (error) {

@@ -1,14 +1,13 @@
-import React, { useState, useMemo } from 'react';
-import { 
-  Moon, 
-  MapPin, 
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  Moon,
+  MapPin,
   ChevronRight,
   BookOpen,
   Heart,
   Book,
   FileText,
   Search,
-  Volume2,
   PlayCircle,
   PauseCircle,
   Bookmark,
@@ -22,72 +21,192 @@ import {
   EyeOff,
   Type,
   X,
-  Info,
   Mic2,
   Globe,
-  Home,
-  Library,
-  Layers,
-  File,
-  Sun,
   CloudSun,
   Shield,
   Coffee,
   Plane,
   Frown,
-  Users
+  Users,
+  Loader2,
+  RefreshCw
 } from 'lucide-react';
-import { 
-  MOCK_PRAYER_TIMES, 
-  MOCK_DUAS, 
-  MOCK_HADITH_COLLECTIONS,
-  MOCK_FIQH, 
-  MOCK_QURAN_SURAHS,
-  MOCK_QURAN_VERSES,
+import {
+  MOCK_PRAYER_TIMES,
+  MOCK_FIQH,
   MOCK_RECITERS
 } from '../../constants';
 import { format } from 'date-fns';
-import { QuranSurah, QuranVerse, FiqhTopic, HadithCollection, HadithVolume, HadithBook, HadithChapter } from '../../types';
+import { FiqhTopic } from '../../types';
+import * as islamicService from '../../services/islamicService';
 
 type Tab = 'prayers' | 'quran' | 'dua' | 'hadith' | 'fiqh';
+
+// Types for API data
+interface QuranSurahInfo {
+  chapter: number;
+  name: string;
+  englishname: string;
+  arabicname: string;
+  revelation: string;
+  verses: number;
+}
+
+interface QuranVerseData {
+  verse: number;
+  text: string;
+  translation?: string;
+}
+
+interface HadithEditionInfo {
+  name: string;
+  collection: string[];
+  language: string;
+}
 
 const IslamicModule: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('prayers');
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  
+
+  // Loading and Error States
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   // Search States
   const [duaSearchQuery, setDuaSearchQuery] = useState('');
-  const [selectedDuaCategory, setSelectedDuaCategory] = useState<string | null>(null);
-  
   const [quranSearchQuery, setQuranSearchQuery] = useState('');
-  
-  // Hadith Navigation State
-  const [selectedCollection, setSelectedCollection] = useState<HadithCollection | null>(null);
-  const [selectedVolume, setSelectedVolume] = useState<HadithVolume | null>(null);
-  const [selectedBook, setSelectedBook] = useState<HadithBook | null>(null);
-  const [selectedChapter, setSelectedChapter] = useState<HadithChapter | null>(null);
-
   const [fiqhSearchQuery, setFiqhSearchQuery] = useState('');
   const [selectedFiqhTopic, setSelectedFiqhTopic] = useState<FiqhTopic | null>(null);
 
   // Quran State
-  const [selectedSurah, setSelectedSurah] = useState<QuranSurah | null>(null);
+  const [quranChapters, setQuranChapters] = useState<QuranSurahInfo[]>([]);
+  const [selectedSurah, setSelectedSurah] = useState<QuranSurahInfo | null>(null);
+  const [surahVerses, setSurahVerses] = useState<QuranVerseData[]>([]);
   const [quranSettingsOpen, setQuranSettingsOpen] = useState(false);
   const [quranViewOptions, setQuranViewOptions] = useState({
     showTranslation: true,
-    showTransliteration: true,
+    showTransliteration: false,
     showDhivehi: false,
     showTafsir: true,
-    fontSize: 36, // Arabic font size
-    translationFontSize: 18, // English font size
-    dhivehiFontSize: 18 // Dhivehi font size
+    fontSize: 36,
+    translationFontSize: 18,
+    dhivehiFontSize: 18
   });
   const [selectedReciter, setSelectedReciter] = useState('mishary');
-  const [activeTafsirVerse, setActiveTafsirVerse] = useState<QuranVerse | null>(null);
-  
-  // Audio State (Mock)
+  const [activeTafsirVerse, setActiveTafsirVerse] = useState<QuranVerseData | null>(null);
+  const [tafsirText, setTafsirText] = useState<string>('');
+  const [tafsirLoading, setTafsirLoading] = useState(false);
+
+  // Hadith State
+  const [hadithEditions, setHadithEditions] = useState<Record<string, HadithEditionInfo>>({});
+  const [selectedHadithEdition, setSelectedHadithEdition] = useState<string | null>(null);
+  const [hadithSections, setHadithSections] = useState<islamicService.HadithSection[]>([]);
+  const [selectedSection, setSelectedSection] = useState<number | null>(null);
+  const [hadiths, setHadiths] = useState<islamicService.Hadith[]>([]);
+
+  // Dua State
+  const [duas, setDuas] = useState<islamicService.Dua[]>([]);
+  const [duaCategories, setDuaCategories] = useState<islamicService.DuaCategory[]>([]);
+
+  // Audio State
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+
+  // Load initial data
+  useEffect(() => {
+    loadInitialData();
+  }, []);
+
+  const loadInitialData = async () => {
+    try {
+      // Load Quran chapters
+      const chapters = await islamicService.getQuranChapters();
+      setQuranChapters(chapters);
+
+      // Load Hadith editions
+      const editions = await islamicService.getHadithEditions();
+      setHadithEditions(editions);
+
+      // Load Duas (local data)
+      setDuas(islamicService.getAllDuas());
+      setDuaCategories(islamicService.getDuaCategories());
+    } catch (err) {
+      console.error('Failed to load initial data:', err);
+    }
+  };
+
+  // Load surah verses when a surah is selected
+  useEffect(() => {
+    if (selectedSurah) {
+      loadSurahVerses(selectedSurah.chapter);
+    }
+  }, [selectedSurah]);
+
+  const loadSurahVerses = async (chapterNumber: number) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await islamicService.getQuranChapter(chapterNumber);
+      setSurahVerses(data.verses);
+    } catch (err) {
+      setError('Failed to load verses. Please try again.');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load tafsir for a verse
+  const loadTafsir = async (surahNumber: number, verseNumber: number) => {
+    setTafsirLoading(true);
+    try {
+      const tafsir = await islamicService.getTafsirForAyah(surahNumber, verseNumber);
+      setTafsirText(tafsir.text || 'Tafsir not available for this verse.');
+    } catch (err) {
+      setTafsirText('Failed to load tafsir. Please try again.');
+    } finally {
+      setTafsirLoading(false);
+    }
+  };
+
+  // Load hadith sections when edition is selected
+  useEffect(() => {
+    if (selectedHadithEdition) {
+      loadHadithSections(selectedHadithEdition);
+    }
+  }, [selectedHadithEdition]);
+
+  const loadHadithSections = async (edition: string) => {
+    setLoading(true);
+    try {
+      const sections = await islamicService.getHadithSections(edition);
+      setHadithSections(sections);
+    } catch (err) {
+      console.error('Failed to load hadith sections:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load hadiths when section is selected
+  useEffect(() => {
+    if (selectedHadithEdition && selectedSection !== null) {
+      loadHadiths(selectedHadithEdition, selectedSection);
+    }
+  }, [selectedHadithEdition, selectedSection]);
+
+  const loadHadiths = async (edition: string, sectionNumber: number) => {
+    setLoading(true);
+    try {
+      const hadithList = await islamicService.getHadithsBySection(edition, sectionNumber);
+      setHadiths(hadithList);
+    } catch (err) {
+      console.error('Failed to load hadiths:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const toggleAudio = (id: string) => {
     if (playingAudioId === id) {
@@ -237,14 +356,10 @@ const IslamicModule: React.FC = () => {
   };
 
   const renderQuranView = () => {
-    const filteredSurahs = MOCK_QURAN_SURAHS.filter(s => 
-      s.englishName.toLowerCase().includes(quranSearchQuery.toLowerCase()) || 
+    const filteredSurahs = quranChapters.filter(s =>
+      s.englishname.toLowerCase().includes(quranSearchQuery.toLowerCase()) ||
       s.name.includes(quranSearchQuery)
     );
-
-    const filteredVerses = selectedSurah 
-      ? MOCK_QURAN_VERSES.filter(v => v.surahNumber === selectedSurah.number)
-      : [];
 
     return (
       <div className="flex flex-col lg:flex-row h-full gap-6 animate-fade-in relative">
@@ -254,12 +369,12 @@ const IslamicModule: React.FC = () => {
           ${selectedSurah ? 'hidden lg:flex' : 'flex w-full'}
         `}>
           <div className="p-5 border-b border-slate-100 bg-slate-50/50">
-            <h3 className="font-bold text-slate-900 mb-3 px-1">Surahs</h3>
+            <h3 className="font-bold text-slate-900 mb-3 px-1">Surahs ({quranChapters.length})</h3>
             <div className="relative">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-              <input 
-                type="text" 
-                placeholder="Search by name..." 
+              <input
+                type="text"
+                placeholder="Search by name..."
                 value={quranSearchQuery}
                 onChange={(e) => setQuranSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-base md:text-sm focus:ring-2 focus:ring-emerald-500 outline-none bg-white placeholder-slate-400"
@@ -267,28 +382,35 @@ const IslamicModule: React.FC = () => {
             </div>
           </div>
           <div className="flex-1 overflow-y-auto">
-            {filteredSurahs.map((surah) => (
-              <button
-                key={surah.number}
-                onClick={() => setSelectedSurah(surah)}
-                className={`w-full text-left p-4 hover:bg-slate-50 transition-all border-b border-slate-50 flex items-center justify-between group ${selectedSurah?.number === surah.number ? 'bg-emerald-50 border-emerald-100' : ''}`}
-              >
-                <div className="flex items-center gap-4">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold transition-colors ${selectedSurah?.number === surah.number ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-100 text-slate-500 group-hover:bg-white group-hover:shadow-sm'}`}>
-                    {surah.number}
+            {quranChapters.length === 0 ? (
+              <div className="p-8 text-center">
+                <Loader2 className="animate-spin mx-auto text-emerald-600 mb-2" size={24} />
+                <p className="text-slate-400 text-sm">Loading Surahs...</p>
+              </div>
+            ) : (
+              filteredSurahs.map((surah) => (
+                <button
+                  key={surah.chapter}
+                  onClick={() => setSelectedSurah(surah)}
+                  className={`w-full text-left p-4 hover:bg-slate-50 transition-all border-b border-slate-50 flex items-center justify-between group ${selectedSurah?.chapter === surah.chapter ? 'bg-emerald-50 border-emerald-100' : ''}`}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold transition-colors ${selectedSurah?.chapter === surah.chapter ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-100 text-slate-500 group-hover:bg-white group-hover:shadow-sm'}`}>
+                      {surah.chapter}
+                    </div>
+                    <div>
+                      <div className="font-bold text-slate-900 text-sm mb-0.5">{surah.englishname}</div>
+                      <div className="text-xs text-slate-500 font-medium">{surah.name}</div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="font-bold text-slate-900 text-sm mb-0.5">{surah.englishName}</div>
-                    <div className="text-xs text-slate-500 font-medium">{surah.englishNameTranslation}</div>
+                  <div className="text-right">
+                    <div className="font-amiri font-bold text-lg text-slate-800 leading-none mb-1">{surah.arabicname}</div>
+                    <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">{surah.verses} Ayahs</div>
                   </div>
-                </div>
-                <div className="text-right">
-                  <div className="font-amiri font-bold text-lg text-slate-800 leading-none mb-1">{surah.name}</div>
-                  <div className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">{surah.numberOfAyahs} Ayahs</div>
-                </div>
-              </button>
-            ))}
-            {filteredSurahs.length === 0 && (
+                </button>
+              ))
+            )}
+            {filteredSurahs.length === 0 && quranChapters.length > 0 && (
                <div className="p-8 text-center text-slate-400 text-sm">
                   No Surahs found.
                </div>
@@ -306,15 +428,15 @@ const IslamicModule: React.FC = () => {
               {/* Reader Header */}
               <div className="p-4 md:p-6 border-b border-slate-100 flex items-center justify-between bg-white/95 sticky top-0 z-20 backdrop-blur-md">
                 <div className="flex items-center gap-4">
-                  <button onClick={() => setSelectedSurah(null)} className="lg:hidden p-2 -ml-2 text-slate-500 hover:bg-slate-100 rounded-lg">
+                  <button onClick={() => { setSelectedSurah(null); setSurahVerses([]); }} className="lg:hidden p-2 -ml-2 text-slate-500 hover:bg-slate-100 rounded-lg">
                     <ArrowLeft size={24} />
                   </button>
                   <div>
                     <div className="flex items-center gap-2">
-                      <h2 className="text-xl md:text-2xl font-bold text-slate-900">{selectedSurah.englishName}</h2>
-                      <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">{selectedSurah.revelationType}</span>
+                      <h2 className="text-xl md:text-2xl font-bold text-slate-900">{selectedSurah.englishname}</h2>
+                      <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">{selectedSurah.revelation}</span>
                     </div>
-                    <p className="text-slate-500 text-xs font-medium mt-0.5">{selectedSurah.englishNameTranslation} • {selectedSurah.numberOfAyahs} Verses</p>
+                    <p className="text-slate-500 text-xs font-medium mt-0.5">{selectedSurah.name} • {selectedSurah.verses} Verses</p>
                   </div>
                 </div>
                 
@@ -439,33 +561,48 @@ const IslamicModule: React.FC = () => {
               <div className="flex-1 overflow-y-auto bg-slate-50/30">
                  <div className="max-w-4xl mx-auto p-6 md:p-10 space-y-10">
                     {/* Bismillah */}
-                    {selectedSurah.number !== 1 && selectedSurah.number !== 9 && (
+                    {selectedSurah.chapter !== 1 && selectedSurah.chapter !== 9 && (
                        <div className="text-center py-8">
                           <p className="font-amiri text-3xl text-slate-800 leading-relaxed">بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ</p>
                        </div>
                     )}
-                    
-                    {filteredVerses.length > 0 ? (
-                       filteredVerses.map((verse) => (
-                          <div key={verse.id} className="bg-white rounded-3xl p-6 md:p-8 shadow-sm border border-slate-100 relative group transition-all hover:shadow-md">
-                             
+
+                    {loading ? (
+                       <div className="flex flex-col items-center justify-center py-20">
+                          <Loader2 className="animate-spin text-emerald-600 mb-4" size={48} />
+                          <p className="text-slate-500">Loading verses...</p>
+                       </div>
+                    ) : error ? (
+                       <div className="flex flex-col items-center justify-center py-20 text-center">
+                          <p className="text-red-500 mb-4">{error}</p>
+                          <button
+                             onClick={() => loadSurahVerses(selectedSurah.chapter)}
+                             className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+                          >
+                             <RefreshCw size={16} /> Retry
+                          </button>
+                       </div>
+                    ) : surahVerses.length > 0 ? (
+                       surahVerses.map((verse) => (
+                          <div key={verse.verse} className="bg-white rounded-3xl p-6 md:p-8 shadow-sm border border-slate-100 relative group transition-all hover:shadow-md">
+
                              {/* Verse Header / Actions */}
                              <div className="flex items-start justify-between mb-8 pb-4 border-b border-slate-50">
                                 <div className="flex items-center gap-3">
                                    <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center text-xs font-bold font-sans">
-                                      {selectedSurah.number}:{verse.verseNumber}
+                                      {selectedSurah.chapter}:{verse.verse}
                                    </div>
                                    <div className="flex gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <button 
-                                         onClick={() => toggleAudio(verse.id)}
-                                         className={`p-2 rounded-full transition-all ${playingAudioId === verse.id ? 'bg-emerald-100 text-emerald-600' : 'hover:bg-slate-100 text-slate-400'}`}
+                                      <button
+                                         onClick={() => toggleAudio(`${selectedSurah.chapter}:${verse.verse}`)}
+                                         className={`p-2 rounded-full transition-all ${playingAudioId === `${selectedSurah.chapter}:${verse.verse}` ? 'bg-emerald-100 text-emerald-600' : 'hover:bg-slate-100 text-slate-400'}`}
                                          title="Play Audio"
                                       >
-                                         {playingAudioId === verse.id ? <PauseCircle size={18} /> : <PlayCircle size={18} />}
+                                         {playingAudioId === `${selectedSurah.chapter}:${verse.verse}` ? <PauseCircle size={18} /> : <PlayCircle size={18} />}
                                       </button>
                                       {quranViewOptions.showTafsir && (
-                                        <button 
-                                           onClick={() => setActiveTafsirVerse(verse)}
+                                        <button
+                                           onClick={() => { setActiveTafsirVerse(verse); loadTafsir(selectedSurah.chapter, verse.verse); }}
                                            className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-emerald-600 transition-colors"
                                            title="View Tafsir"
                                         >
@@ -482,39 +619,23 @@ const IslamicModule: React.FC = () => {
 
                              {/* Arabic Text */}
                              <div className="text-right mb-8">
-                                <p 
+                                <p
                                    className="font-amiri text-slate-900 leading-[2.5] tracking-wide"
                                    style={{ fontSize: `${quranViewOptions.fontSize}px` }}
                                    dir="rtl"
                                 >
-                                   {verse.arabic}
+                                   {verse.text}
                                 </p>
                              </div>
 
-                             {/* Translations */}
+                             {/* Translation */}
                              <div className="space-y-6">
-                                {quranViewOptions.showTransliteration && (
-                                   <p className="text-base text-emerald-700 font-medium italic leading-relaxed">
-                                      {verse.transliteration}
-                                   </p>
-                                )}
-                                
-                                {quranViewOptions.showTranslation && (
-                                   <p 
+                                {quranViewOptions.showTranslation && verse.translation && (
+                                   <p
                                       className="text-slate-700 leading-relaxed font-light border-l-2 border-slate-100 pl-4"
                                       style={{ fontSize: `${quranViewOptions.translationFontSize}px` }}
                                    >
                                       {verse.translation}
-                                   </p>
-                                )}
-
-                                {quranViewOptions.showDhivehi && verse.dhivehi && (
-                                   <p 
-                                      className="text-slate-800 leading-relaxed font-normal text-right font-amiri border-r-2 border-emerald-100 pr-4"
-                                      style={{ fontSize: `${quranViewOptions.dhivehiFontSize}px` }}
-                                      dir="rtl"
-                                   >
-                                      {verse.dhivehi}
                                    </p>
                                 )}
                              </div>
@@ -542,29 +663,38 @@ const IslamicModule: React.FC = () => {
         </div>
 
         {/* Tafsir Slide-Over */}
-        {activeTafsirVerse && (
+        {activeTafsirVerse && selectedSurah && (
            <div className="absolute inset-0 z-40 flex justify-end bg-black/20 backdrop-blur-sm animate-in fade-in duration-200">
               <div className="w-full lg:w-[500px] bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
                  <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-white">
                     <div>
-                       <h3 className="text-lg font-bold text-slate-900">Tafsir Ibn Kathir</h3>
-                       <p className="text-xs text-slate-500 font-medium">Surah {activeTafsirVerse.surahNumber}, Verse {activeTafsirVerse.verseNumber}</p>
+                       <h3 className="text-lg font-bold text-slate-900">Tafsir</h3>
+                       <p className="text-xs text-slate-500 font-medium">Surah {selectedSurah.chapter}, Verse {activeTafsirVerse.verse}</p>
                     </div>
-                    <button onClick={() => setActiveTafsirVerse(null)} className="p-2 hover:bg-slate-100 rounded-full text-slate-500">
+                    <button onClick={() => { setActiveTafsirVerse(null); setTafsirText(''); }} className="p-2 hover:bg-slate-100 rounded-full text-slate-500">
                        <X size={24} />
                     </button>
                  </div>
                  <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50">
                     <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm mb-6">
-                       <p className="font-amiri text-2xl text-right leading-loose mb-4">{activeTafsirVerse.arabic}</p>
-                       <p className="text-sm text-slate-600 italic">{activeTafsirVerse.translation}</p>
+                       <p className="font-amiri text-2xl text-right leading-loose mb-4">{activeTafsirVerse.text}</p>
+                       {activeTafsirVerse.translation && (
+                          <p className="text-sm text-slate-600 italic">{activeTafsirVerse.translation}</p>
+                       )}
                     </div>
-                    
+
                     <div className="prose prose-slate max-w-none">
                        <h4 className="font-bold text-slate-900">Exegesis</h4>
-                       <p className="text-slate-600 leading-relaxed">
-                          This is a mock Tafsir entry for the selected verse. In a real application, this would fetch detailed scholarly commentary from sources like Ibn Kathir, Jalalayn, or Ma'arif ul Quran.
-                       </p>
+                       {tafsirLoading ? (
+                          <div className="flex items-center gap-2 text-slate-500">
+                             <Loader2 className="animate-spin" size={16} />
+                             Loading tafsir...
+                          </div>
+                       ) : (
+                          <p className="text-slate-600 leading-relaxed whitespace-pre-wrap">
+                             {tafsirText}
+                          </p>
+                       )}
                     </div>
                  </div>
               </div>
@@ -574,34 +704,143 @@ const IslamicModule: React.FC = () => {
     );
   };
 
-  const renderHadithView = () => (
-    <div className="animate-fade-in space-y-6">
-       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {MOCK_HADITH_COLLECTIONS.map(collection => (
-             <div key={collection.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer group">
-                <div className="flex justify-between items-start mb-4">
-                   <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl group-hover:bg-emerald-600 group-hover:text-white transition-colors">
-                      <Book size={24} />
-                   </div>
-                   <span className="text-xs font-bold bg-slate-100 text-slate-500 px-2 py-1 rounded-md">{collection.totalHadith.toLocaleString()} Hadiths</span>
-                </div>
-                <h3 className="text-lg font-bold text-slate-900 mb-1">{collection.name}</h3>
-                <p className="font-amiri text-lg text-slate-500 mb-2">{collection.arabicName}</p>
-                <div className="text-sm text-slate-500">{collection.volumes.length} Volumes</div>
-             </div>
-          ))}
-       </div>
-    </div>
-  );
+  const renderHadithView = () => {
+    const editionKeys = Object.keys(hadithEditions);
 
-  const renderDuaView = () => (
-     <div className="animate-fade-in space-y-6">
+    // If no edition selected, show edition list
+    if (!selectedHadithEdition) {
+      return (
+        <div className="animate-fade-in space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {editionKeys.length === 0 ? (
+              <div className="col-span-2 flex flex-col items-center justify-center py-20">
+                <Loader2 className="animate-spin text-emerald-600 mb-4" size={48} />
+                <p className="text-slate-500">Loading Hadith collections...</p>
+              </div>
+            ) : (
+              editionKeys.map(key => {
+                const edition = hadithEditions[key];
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setSelectedHadithEdition(key)}
+                    className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer group text-left"
+                  >
+                    <div className="flex justify-between items-start mb-4">
+                      <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                        <Book size={24} />
+                      </div>
+                      <span className="text-xs font-bold bg-slate-100 text-slate-500 px-2 py-1 rounded-md">{edition.collection?.length || 0} Sections</span>
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-900 mb-1 capitalize">{edition.name?.replace(/-/g, ' ') || key}</h3>
+                    <p className="text-sm text-slate-500">{edition.language || 'Arabic'}</p>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // If edition selected but no section, show sections
+    if (selectedSection === null) {
+      return (
+        <div className="animate-fade-in space-y-6">
+          <button
+            onClick={() => { setSelectedHadithEdition(null); setHadithSections([]); }}
+            className="flex items-center gap-2 text-emerald-600 hover:text-emerald-700 font-medium"
+          >
+            <ArrowLeft size={18} /> Back to Collections
+          </button>
+
+          <h2 className="text-xl font-bold text-slate-900 capitalize">{selectedHadithEdition.replace(/-/g, ' ')}</h2>
+
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-20">
+              <Loader2 className="animate-spin text-emerald-600 mb-4" size={48} />
+              <p className="text-slate-500">Loading sections...</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {hadithSections.map((section) => (
+                <button
+                  key={section.hapilesection}
+                  onClick={() => setSelectedSection(section.hapilesection)}
+                  className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                      {section.hapilesection}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-medium text-slate-900 truncate">{section.name || `Section ${section.hapilesection}`}</h3>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Show hadiths in selected section
+    return (
+      <div className="animate-fade-in space-y-6">
+        <button
+          onClick={() => { setSelectedSection(null); setHadiths([]); }}
+          className="flex items-center gap-2 text-emerald-600 hover:text-emerald-700 font-medium"
+        >
+          <ArrowLeft size={18} /> Back to Sections
+        </button>
+
+        <h2 className="text-xl font-bold text-slate-900">Section {selectedSection}</h2>
+
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <Loader2 className="animate-spin text-emerald-600 mb-4" size={48} />
+            <p className="text-slate-500">Loading hadiths...</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {hadiths.map((hadith, index) => (
+              <div key={index} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-xs font-bold bg-emerald-50 text-emerald-600 px-2 py-1 rounded-md">
+                    Hadith #{hadith.hadithnumber}
+                  </span>
+                </div>
+                <p className="font-amiri text-xl text-right leading-loose mb-4 text-slate-800" dir="rtl">
+                  {hadith.arabicnumber || hadith.hadithnumber}
+                </p>
+                <p className="text-slate-700 leading-relaxed">{hadith.text}</p>
+                {hadith.grades && hadith.grades.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-slate-100">
+                    <span className="text-xs text-slate-500">Grade: {hadith.grades[0]?.grade}</span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderDuaView = () => {
+    const filteredDuas = duaSearchQuery
+      ? islamicService.searchDuas(duaSearchQuery)
+      : duas;
+
+    return (
+      <div className="animate-fade-in space-y-6">
         <div className="flex items-center gap-4 mb-6">
            <div className="relative flex-1">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-              <input 
-                 type="text" 
-                 placeholder="Search for a Dua..." 
+              <input
+                 type="text"
+                 placeholder="Search for a Dua..."
                  value={duaSearchQuery}
                  onChange={(e) => setDuaSearchQuery(e.target.value)}
                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-emerald-500 outline-none bg-white shadow-sm"
@@ -609,8 +848,27 @@ const IslamicModule: React.FC = () => {
            </div>
         </div>
 
+        {/* Category Pills */}
+        <div className="flex flex-wrap gap-2 mb-4">
+          <button
+            onClick={() => setDuaSearchQuery('')}
+            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${!duaSearchQuery ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+          >
+            All
+          </button>
+          {duaCategories.map(cat => (
+            <button
+              key={cat.id}
+              onClick={() => setDuaSearchQuery(cat.name)}
+              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${duaSearchQuery === cat.name ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+            >
+              {cat.name} ({cat.count})
+            </button>
+          ))}
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-           {MOCK_DUAS.filter(d => d.title.toLowerCase().includes(duaSearchQuery.toLowerCase()) || d.translation.toLowerCase().includes(duaSearchQuery.toLowerCase())).map(dua => {
+           {filteredDuas.map(dua => {
               const Icon = getDuaCategoryIcon(dua.category);
               return (
                  <div key={dua.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
@@ -621,20 +879,31 @@ const IslamicModule: React.FC = () => {
                           </div>
                           <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">{dua.category}</span>
                        </div>
-                       <button className={`text-slate-300 hover:text-amber-400 ${dua.isFavorite ? 'text-amber-400' : ''}`}>
-                          <Heart size={18} fill={dua.isFavorite ? "currentColor" : "none"} />
+                       <button className="text-slate-300 hover:text-amber-400">
+                          <Heart size={18} />
                        </button>
                     </div>
                     <h3 className="font-bold text-slate-900 mb-3">{dua.title}</h3>
-                    <p className="font-amiri text-xl text-right text-slate-800 leading-loose mb-4">{dua.arabic}</p>
-                    <p className="text-sm text-slate-600 italic mb-3">"{dua.translation}"</p>
+                    <p className="font-amiri text-xl text-right text-slate-800 leading-loose mb-4" dir="rtl">{dua.arabic}</p>
+                    {dua.transliteration && (
+                      <p className="text-sm text-emerald-700 italic mb-3">{dua.transliteration}</p>
+                    )}
+                    <p className="text-sm text-slate-600 mb-3">"{dua.translation}"</p>
                     <div className="text-xs text-slate-400 font-medium">{dua.reference}</div>
                  </div>
               );
            })}
         </div>
-     </div>
-  );
+
+        {filteredDuas.length === 0 && (
+          <div className="text-center py-12 text-slate-400">
+            <Search size={48} className="mx-auto mb-4 opacity-50" />
+            <p>No duas found matching "{duaSearchQuery}"</p>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderFiqhView = () => (
      <div className="animate-fade-in space-y-6">

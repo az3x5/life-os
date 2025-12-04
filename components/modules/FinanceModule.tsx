@@ -52,16 +52,29 @@ import { format, addDays, isPast, isFuture } from 'date-fns';
 import { useFinance } from '../../hooks/useData';
 
 type FinanceView = 'overview' | 'transactions' | 'budgets' | 'goals' | 'bills' | 'investments' | 'loans';
+type ModalType = 'transaction' | 'account' | 'bill' | 'investment' | 'budget' | 'loan';
 
 const FinanceModule: React.FC = () => {
   // API Hook
-  const { summary, accounts: apiAccounts, transactions: apiTransactions, loading, createTransaction: apiCreateTransaction } = useFinance();
+  const { 
+    summary, 
+    accounts: apiAccounts, 
+    transactions: apiTransactions, 
+    loading, 
+    createTransaction, 
+    updateTransaction, 
+    deleteTransaction, 
+    createAccount, 
+    updateAccount, 
+    deleteAccount 
+  } = useFinance();
 
   const [activeView, setActiveView] = useState<FinanceView>('overview');
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [addModalType, setAddModalType] = useState<'transaction' | 'bill' | 'investment' | 'budget' | 'loan'>('transaction');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalType, setModalType] = useState<ModalType>('transaction');
+  const [editingItem, setEditingItem] = useState<Transaction | Account | null>(null);
 
   // Data State - synced with API
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -93,7 +106,7 @@ const FinanceModule: React.FC = () => {
   // Form State
   const [newTitle, setNewTitle] = useState('');
   const [newAmount, setNewAmount] = useState('');
-  const [newType, setNewType] = useState<'income'|'expense'>('expense');
+  const [newType, setNewType] = useState<'income'|'expense'|'checking'|'savings'|'credit'>('expense');
   const [newCategory, setNewCategory] = useState('food');
   const [newNotes, setNewNotes] = useState('');
   const [newDate, setNewDate] = useState(new Date().toISOString().split('T')[0]);
@@ -158,43 +171,89 @@ const FinanceModule: React.FC = () => {
   }
 
   // --- Handlers ---
-  const openAddModal = (type: 'transaction' | 'bill' | 'investment' | 'budget' | 'loan') => {
-     setAddModalType(type);
-     setNewTitle('');
-     setNewAmount('');
-     setNewDate(new Date().toISOString().split('T')[0]);
-     setNewInterestRate('');
-     setNewProvider('');
-     setNewSymbol('');
-     setNewQuantity('');
-     setIsAddModalOpen(true);
+  const openModal = (type: ModalType, item: Transaction | Account | null = null) => {
+     setModalType(type);
+     setEditingItem(item);
+     setIsModalOpen(true);
+     
+     if (item) {
+       if ('title' in item) { // Transaction
+        setNewTitle(item.title);
+        setNewAmount(Math.abs(item.amount).toString());
+        setNewType(item.type);
+        setNewCategory(item.category);
+        setNewNotes(item.notes || '');
+        setNewDate(format(new Date(item.date), 'yyyy-MM-dd'));
+       } else { // Account
+         setNewTitle(item.name);
+         setNewAmount(item.balance.toString());
+         setNewType(item.type as any);
+       }
+     } else {
+       setNewTitle('');
+       setNewAmount('');
+       setNewDate(new Date().toISOString().split('T')[0]);
+       setNewNotes('');
+       if (type === 'transaction') setNewType('expense');
+       if (type === 'account') setNewType('checking');
+     }
   }
 
-  const handleAddItem = () => {
+  const handleSaveItem = async () => {
     if (!newTitle || !newAmount) return;
     
-    if (addModalType === 'transaction') {
-      const newTx: Transaction = {
-        id: Date.now().toString(),
-        title: newTitle,
-        amount: newType === 'expense' ? -Math.abs(Number(newAmount)) : Math.abs(Number(newAmount)),
-        type: newType,
-        category: newCategory as any,
-        date: new Date(newDate),
-        account: 'checking',
-        notes: newNotes,
-      };
-      setTransactions([newTx, ...transactions]);
+    if (editingItem) { // Update
+      if (modalType === 'transaction') {
+        await updateTransaction(editingItem.id, {
+          title: newTitle,
+          amount: newType === 'expense' ? -Math.abs(Number(newAmount)) : Math.abs(Number(newAmount)),
+          type: newType as 'income' | 'expense',
+          category: newCategory,
+          notes: newNotes,
+          date: new Date(newDate),
+        });
+      } else if (modalType === 'account') {
+        await updateAccount(editingItem.id, {
+          name: newTitle,
+          balance: Number(newAmount),
+          type: newType as any,
+        });
+      }
+    } else { // Create
+      if (modalType === 'transaction') {
+        await createTransaction({
+          title: newTitle,
+          amount: newType === 'expense' ? -Math.abs(Number(newAmount)) : Math.abs(Number(newAmount)),
+          type: newType as 'income' | 'expense',
+          category: newCategory,
+          notes: newNotes,
+          date: new Date(newDate),
+          account: accounts[0]?.id, // Default to first account
+        });
+      } else if (modalType === 'account') {
+        await createAccount({
+          name: newTitle,
+          balance: Number(newAmount),
+          type: newType as any
+        });
+      }
     }
     
     // Reset & Close
-    setIsAddModalOpen(false);
-    setNewTitle('');
-    setNewAmount('');
+    setIsModalOpen(false);
+    setEditingItem(null);
   };
 
-  const handleDeleteTransaction = (id: string) => {
-     setTransactions(prev => prev.filter(t => t.id !== id));
+  const handleDeleteTransaction = async (id: string) => {
+     if (window.confirm('Are you sure you want to delete this transaction?')) {
+       await deleteTransaction(id);
+     }
+  }
+  
+  const handleDeleteAccount = async (id: string) => {
+     if (window.confirm('Are you sure you want to delete this account? This will also delete all its transactions.')) {
+       await deleteAccount(id);
+     }
   }
 
   // --- Views ---
@@ -243,24 +302,31 @@ const FinanceModule: React.FC = () => {
 
       {/* Accounts Grid */}
       <div>
-         <h3 className="text-lg font-bold text-slate-900 mb-4">Accounts</h3>
+         <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-bold text-slate-900">Accounts</h3>
+          <button onClick={() => openModal('account')} className="flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900">
+            <Plus size={16}/> New Account
+          </button>
+         </div>
          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {accounts.map(acc => {
                const Icon = getAccountIcon(acc.type);
                return (
-                  <div key={acc.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+                  <div key={acc.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow group relative">
                      <div className="flex justify-between items-start mb-4">
                         <div className={`p-2.5 rounded-lg ${acc.type === 'savings' ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-600'}`}>
                            <Icon size={20} />
                         </div>
-                        {acc.type === 'credit' && <span className="bg-slate-100 text-slate-500 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">Credit</span>}
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute top-2 right-2 flex gap-1">
+                          <button onClick={() => openModal('account', acc)} className="p-1.5 rounded-md bg-white/50 backdrop-blur-sm text-slate-500 hover:bg-slate-200 hover:text-slate-800"><Edit2 size={14}/></button>
+                          <button onClick={() => handleDeleteAccount(acc.id)} className="p-1.5 rounded-md bg-white/50 backdrop-blur-sm text-slate-500 hover:bg-red-100 hover:text-red-600"><Trash2 size={14}/></button>
+                        </div>
                      </div>
                      <div>
                         <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1 truncate">{acc.name}</p>
                         <p className={`text-xl font-bold ${acc.type === 'credit' ? 'text-slate-900' : 'text-slate-900'}`}>
                            {acc.type === 'credit' ? '-' : ''}${Math.abs(acc.balance).toLocaleString()}
                         </p>
-                        <p className="text-xs text-slate-400 mt-1">{acc.accountNumber}</p>
                      </div>
                   </div>
                )
@@ -272,7 +338,7 @@ const FinanceModule: React.FC = () => {
 
   const renderTransactions = () => {
     const filtered = transactions.filter(t => 
-      t.title.toLowerCase().includes(txSearchQuery.toLowerCase()) &&
+      (t.title?.toLowerCase() || '').includes(txSearchQuery.toLowerCase()) &&
       (txAccountFilter === 'all' || t.account === txAccountFilter) &&
       (txCategoryFilter === 'all' || t.type === txCategoryFilter)
     );
@@ -307,9 +373,7 @@ const FinanceModule: React.FC = () => {
                    className="px-4 py-2.5 rounded-xl border border-slate-200 text-base md:text-sm bg-white focus:outline-none focus:border-slate-400"
                 >
                    <option value="all">All Accounts</option>
-                   <option value="checking">Checking</option>
-                   <option value="savings">Savings</option>
-                   <option value="credit">Credit</option>
+                   {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name}</option>)}
                 </select>
              </div>
           </div>
@@ -326,7 +390,7 @@ const FinanceModule: React.FC = () => {
                           <th className="p-4">Date</th>
                           <th className="p-4">Account</th>
                           <th className="p-4 text-right rounded-r-xl">Amount</th>
-                          <th className="p-4 w-10"></th>
+                          <th className="p-4 w-20 text-right"></th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
@@ -346,14 +410,15 @@ const FinanceModule: React.FC = () => {
                                     <span className="px-2 py-1 rounded-md bg-slate-100 text-slate-600 text-xs font-medium">{tx.category}</span>
                                 </td>
                                 <td className="p-4 text-sm text-slate-500">{format(new Date(tx.date), 'MMM d, yyyy')}</td>
-                                <td className="p-4 text-sm text-slate-500 capitalize">{tx.account}</td>
+                                <td className="p-4 text-sm text-slate-500 capitalize">{typeof tx.account === 'object' ? (tx.account as Account).name : tx.account}</td>
                                 <td className={`p-4 text-sm font-bold text-right ${tx.type === 'income' ? 'text-emerald-600' : 'text-slate-900'}`}>
                                     {tx.type === 'income' ? '+' : ''}${Math.abs(tx.amount).toLocaleString()}
                                 </td>
                                 <td className="p-4 text-right">
-                                    <button onClick={() => handleDeleteTransaction(tx.id)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all">
-                                      <Trash2 size={16} />
-                                    </button>
+                                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex justify-end gap-1">
+                                      <button onClick={() => openModal('transaction', tx)} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg"><Edit2 size={16} /></button>
+                                      <button onClick={() => handleDeleteTransaction(tx.id)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-100 rounded-lg"><Trash2 size={16} /></button>
+                                    </div>
                                 </td>
                               </tr>
                           )
@@ -372,7 +437,7 @@ const FinanceModule: React.FC = () => {
         <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold text-slate-900">Budgets & Analytics</h2>
             <button 
-               onClick={() => openAddModal('budget')} 
+               onClick={() => openModal('budget')} 
                className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-sm font-medium hover:bg-slate-800 transition-colors"
             >
                <Plus size={16} /> Edit Budgets
@@ -417,7 +482,7 @@ const FinanceModule: React.FC = () => {
         <div className="flex justify-between items-center mb-6">
            <h2 className="text-2xl font-bold text-slate-900">Savings Goals</h2>
            <button 
-             onClick={() => openAddModal('budget')} 
+             onClick={() => openModal('budget')} 
              className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-sm font-medium hover:bg-slate-800 transition-colors"
            >
               <Plus size={16} /> New Goal
@@ -455,7 +520,7 @@ const FinanceModule: React.FC = () => {
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold text-slate-900">Recurring Bills</h2>
           <button 
-             onClick={() => openAddModal('bill')} 
+             onClick={() => openModal('bill')} 
              className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-sm font-medium hover:bg-slate-800 transition-colors"
           >
              <Plus size={16} /> Add Bill
@@ -496,7 +561,7 @@ const FinanceModule: React.FC = () => {
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-slate-900">Loans & Debt</h2>
         <button 
-          onClick={() => openAddModal('loan')} 
+          onClick={() => openModal('loan')} 
           className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-sm font-medium hover:bg-slate-800 transition-colors"
         >
           <Plus size={16} /> Add Loan
@@ -555,7 +620,7 @@ const FinanceModule: React.FC = () => {
          <div className="flex items-center justify-between mb-6">
            <h2 className="text-2xl font-bold text-slate-900">Portfolio Holdings</h2>
            <button 
-             onClick={() => openAddModal('investment')} 
+             onClick={() => openModal('investment')} 
              className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-sm font-medium hover:bg-slate-800 transition-colors"
            >
              <Plus size={16} /> Add Investment
@@ -688,7 +753,7 @@ const FinanceModule: React.FC = () => {
             </div>
             
             <button 
-               onClick={() => openAddModal('transaction')}
+               onClick={() => openModal('transaction')}
                className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors shadow-lg shadow-slate-200"
             >
                <Plus size={18} />
@@ -708,18 +773,18 @@ const FinanceModule: React.FC = () => {
          </div>
       </div>
 
-      {/* Generic Add Modal */}
-      {isAddModalOpen && (
+      {/* Generic Add/Edit Modal */}
+      {isModalOpen && (
          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4 animate-in fade-in duration-200">
             <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-6 relative flex flex-col max-h-[90vh]">
-               <button onClick={() => setIsAddModalOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+               <button onClick={() => setIsModalOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
                   <X size={24} />
                </button>
                
-               <h3 className="text-xl font-bold text-slate-900 mb-6 capitalize">Add {addModalType}</h3>
+               <h3 className="text-xl font-bold text-slate-900 mb-6 capitalize">{editingItem ? 'Edit' : 'Add'} {modalType}</h3>
 
                <div className="flex-1 overflow-y-auto space-y-6 pr-2">
-                  {addModalType === 'transaction' && (
+                  {modalType === 'transaction' && (
                     <div className="flex gap-2 p-1.5 bg-slate-100 rounded-xl">
                        <button 
                           onClick={() => setNewType('expense')}
@@ -738,7 +803,7 @@ const FinanceModule: React.FC = () => {
 
                   <div>
                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-                       {addModalType === 'budget' ? 'Limit Amount' : addModalType === 'loan' ? 'Total Amount' : 'Amount'}
+                       {modalType === 'account' ? 'Balance' : 'Amount'}
                      </label>
                      <div className="relative">
                         <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
@@ -755,103 +820,64 @@ const FinanceModule: React.FC = () => {
 
                   <div>
                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-                        {addModalType === 'budget' ? 'Category Name' : addModalType === 'loan' ? 'Loan Name' : addModalType === 'bill' ? 'Biller Name' : 'Description'}
+                        {modalType === 'account' ? 'Account Name' : 'Description'}
                      </label>
                      <input 
                         type="text" 
                         value={newTitle}
                         onChange={(e) => setNewTitle(e.target.value)}
                         className="w-full border border-slate-200 rounded-xl px-4 py-3 text-base md:text-sm focus:ring-2 focus:ring-slate-900 outline-none transition-shadow placeholder-slate-400 text-slate-900" 
-                        placeholder={addModalType === 'budget' ? "e.g. Groceries" : "e.g. Grocery Run"} 
+                        placeholder={modalType === 'account' ? "e.g. Chase Checking" : "e.g. Grocery Run"} 
                      />
                   </div>
 
                   {/* Dynamic Fields based on Type */}
                   <div className="grid grid-cols-2 gap-4">
-                     {addModalType === 'transaction' && (
+                     {modalType === 'transaction' && (
+                       <>
+                         <div>
+                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Category</label>
+                            <select 
+                               value={newCategory} 
+                               onChange={(e) => setNewCategory(e.target.value)}
+                               className="w-full border border-slate-200 rounded-xl px-4 py-3 text-base md:text-sm bg-white focus:ring-2 focus:ring-slate-900 outline-none capitalize transition-shadow text-slate-900"
+                            >
+                               {['food', 'transport', 'shopping', 'bills', 'salary', 'investment'].map(c => (
+                                  <option key={c} value={c}>{c}</option>
+                               ))}
+                            </select>
+                         </div>
+                         <div>
+                           <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Date</label>
+                           <input 
+                             type="date" 
+                             className="w-full border border-slate-200 rounded-xl px-4 py-3 text-base md:text-sm bg-white focus:ring-2 focus:ring-slate-900 outline-none transition-shadow text-slate-900" 
+                             value={newDate}
+                             onChange={(e) => setNewDate(e.target.value)}
+                           />
+                       </div>
+                       </>
+                     )}
+
+                    {modalType === 'account' && (
                        <div>
-                          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Category</label>
+                          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Account Type</label>
                           <select 
-                             value={newCategory} 
-                             onChange={(e) => setNewCategory(e.target.value)}
+                             value={newType} 
+                             onChange={(e) => setNewType(e.target.value as any)}
                              className="w-full border border-slate-200 rounded-xl px-4 py-3 text-base md:text-sm bg-white focus:ring-2 focus:ring-slate-900 outline-none capitalize transition-shadow text-slate-900"
                           >
-                             {['food', 'transport', 'shopping', 'bills', 'salary', 'investment'].map(c => (
-                                <option key={c} value={c}>{c}</option>
-                             ))}
+                             <option value="checking">Checking</option>
+                             <option value="savings">Savings</option>
+                             <option value="credit">Credit</option>
+                             <option value="investment">Investment</option>
+                             <option value="cash">Cash</option>
                           </select>
                        </div>
                      )}
-                     
-                     {addModalType === 'bill' && (
-                        <div>
-                           <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Frequency</label>
-                           <select 
-                              value={newFrequency}
-                              onChange={(e) => setNewFrequency(e.target.value)}
-                              className="w-full border border-slate-200 rounded-xl px-4 py-3 text-base md:text-sm bg-white focus:ring-2 focus:ring-slate-900 outline-none capitalize transition-shadow text-slate-900"
-                           >
-                              <option value="monthly">Monthly</option>
-                              <option value="yearly">Yearly</option>
-                           </select>
-                        </div>
-                     )}
-
-                     {addModalType === 'loan' && (
-                        <div>
-                           <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Interest Rate %</label>
-                           <div className="relative">
-                              <Percent className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                              <input 
-                                 type="number" 
-                                 value={newInterestRate}
-                                 onChange={(e) => setNewInterestRate(e.target.value)}
-                                 className="w-full pl-9 border border-slate-200 rounded-xl px-4 py-3 text-base md:text-sm focus:ring-2 focus:ring-slate-900 outline-none transition-shadow placeholder-slate-400 text-slate-900" 
-                                 placeholder="4.5"
-                              />
-                           </div>
-                        </div>
-                     )}
-
-                     {addModalType === 'investment' && (
-                        <>
-                           <div className="col-span-1">
-                              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Symbol</label>
-                              <input 
-                                 type="text" 
-                                 value={newSymbol}
-                                 onChange={(e) => setNewSymbol(e.target.value)}
-                                 className="w-full border border-slate-200 rounded-xl px-4 py-3 text-base md:text-sm focus:ring-2 focus:ring-slate-900 outline-none uppercase transition-shadow placeholder-slate-400 text-slate-900" 
-                                 placeholder="AAPL"
-                              />
-                           </div>
-                           <div className="col-span-1">
-                              <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Quantity</label>
-                              <input 
-                                 type="number" 
-                                 value={newQuantity}
-                                 onChange={(e) => setNewQuantity(e.target.value)}
-                                 className="w-full border border-slate-200 rounded-xl px-4 py-3 text-base md:text-sm focus:ring-2 focus:ring-slate-900 outline-none transition-shadow placeholder-slate-400 text-slate-900" 
-                                 placeholder="10"
-                              />
-                           </div>
-                        </>
-                     )}
-                     
-                     <div className={addModalType === 'investment' ? 'col-span-2' : ''}>
-                         <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-                           {addModalType === 'bill' ? 'Due Date' : 'Date'}
-                         </label>
-                         <input 
-                           type="date" 
-                           className="w-full border border-slate-200 rounded-xl px-4 py-3 text-base md:text-sm bg-white focus:ring-2 focus:ring-slate-900 outline-none transition-shadow text-slate-900" 
-                           value={newDate}
-                           onChange={(e) => setNewDate(e.target.value)}
-                         />
-                     </div>
                   </div>
 
-                  {addModalType === 'transaction' && (
+                  {modalType === 'transaction' && (
                     <div>
                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Notes (Optional)</label>
                        <textarea 
@@ -863,28 +889,15 @@ const FinanceModule: React.FC = () => {
                        />
                     </div>
                   )}
-
-                  {addModalType === 'loan' && (
-                     <div>
-                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Provider / Lender</label>
-                        <input 
-                           type="text" 
-                           value={newProvider}
-                           onChange={(e) => setNewProvider(e.target.value)}
-                           className="w-full border border-slate-200 rounded-xl px-4 py-3 text-base md:text-sm focus:ring-2 focus:ring-slate-900 outline-none transition-shadow placeholder-slate-400 text-slate-900" 
-                           placeholder="e.g. Chase Bank" 
-                        />
-                     </div>
-                  )}
                </div>
 
                <div className="pt-6 mt-2 border-t border-slate-100">
                   <button 
-                     onClick={handleAddItem}
+                     onClick={handleSaveItem}
                      disabled={!newTitle || !newAmount}
                      className="w-full bg-slate-900 text-white py-4 rounded-xl font-bold hover:bg-slate-800 disabled:opacity-50 transition-all shadow-lg shadow-slate-200 active:scale-[0.98]"
                   >
-                     Save {addModalType}
+                     Save {modalType}
                   </button>
                </div>
             </div>
